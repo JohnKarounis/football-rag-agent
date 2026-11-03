@@ -60,3 +60,25 @@ def split_docs(docs):
     )
 
     return recursive_splitter.split_documents(all_sections)
+
+
+def latest_year(text):
+    """Return the latest year (1900-2099) mentioned in the text, or 0 if none."""
+
+    years = [int(y) for y in re.findall(r'\b(19\d{2}|20\d{2})\b', text)]
+    return max(years) if years else 0 
+
+
+def add_breadcrumbs(chunks):
+    """Prefix each chunk with its 'title > section' path and add max_year metadata."""
+
+    prefixed = []
+    for chunk in chunks:
+        metadata = chunk.metadata 
+        path = ' > '.join(metadata[key] for key in ['title', 'h2', 'h3', 'h4'] if key in metadata)
+        content = f'{path}: {chunk.page_content}'
+        new_metadata = {**metadata, 'max_year': latest_year(chunk.page_content)}
+        prefixed.append(Document(page_content=content, metadata=new_metadata))
+
+    return prefixed
+
