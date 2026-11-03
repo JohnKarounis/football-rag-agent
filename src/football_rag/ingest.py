@@ -82,3 +82,29 @@ def add_breadcrumbs(chunks):
 
     return prefixed
 
+
+def build_store():
+    """Rebuild the Chroma collection from the corpus and return the store."""
+
+    # Delete the old collection so re-running doesn't add duplicate chunks
+    old_store = Chroma(collection_name=config.COLLECTION, persist_directory=str(config.CHROMA_DIR))
+    old_store.delete_collection()
+
+    docs = load_docs()
+    chunks = split_docs(docs)
+    chunks = add_breadcrumbs(chunks)
+
+    store = Chroma.from_documents(
+        documents=chunks,
+        embedding=get_embeddings(),
+        collection_name=config.COLLECTION,
+        persist_directory=str(config.CHROMA_DIR),
+        collection_metadata={'hnsw:space': 'cosine'}
+    )
+
+    return store
+
+
+if __name__ == '__main__':
+    store = build_store()
+    print(store._collection.count())
