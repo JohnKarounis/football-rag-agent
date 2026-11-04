@@ -30,3 +30,22 @@ class GradeChunk(BaseModel):
     """Relevance grade for a retrieved chunk"""
 
     relevant: bool = Field(description="True if the chunk contains information that helps answer the question, otherwise False")
+
+
+grader_prompt = ChatPromptTemplate.from_messages([
+    ('system', GRADER_SYSTEM),
+    ('human', 'Question:\n{question}\n\nDocument:\n{document}')
+])
+grader_chain = grader_prompt | llm.with_structured_output(GradeChunk)
+
+rewrite_prompt = ChatPromptTemplate.from_messages([
+    ('system', REWRITE_SYSTEM),
+    ('human', 'Question:\n{question}\n\nPrevious query:\n{previous_query}')
+])
+rewrite_chain = rewrite_prompt | llm | StrOutputParser()
+
+generate_prompt = ChatPromptTemplate.from_messages([
+    ('system', GENERATE_SYSTEM),
+    ('human', 'Question:\n{question}\n\nContext:\n{context}')
+])
+generate_chain = generate_prompt | llm | StrOutputParser()
