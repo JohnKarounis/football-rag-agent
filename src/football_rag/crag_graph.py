@@ -49,3 +49,26 @@ generate_prompt = ChatPromptTemplate.from_messages([
     ('human', 'Question:\n{question}\n\nContext:\n{context}')
 ])
 generate_chain = generate_prompt | llm | StrOutputParser()
+
+
+def retrieve_node(state: CRAGState):
+    docs = retriever.invoke(state['question'])
+    documents = [doc.page_content for doc in docs]
+    return {'documents': documents}
+
+
+def grade_node(state: CRAGState):
+    relevant_chunks = []
+    for doc in state['documents']:
+        grade = grader_chain.invoke({'question': state['question'], 'document': doc})
+        if grade.relevant:
+            relevant_chunks.append(doc)
+
+    web_search = len(relevant_chunks) == 0
+    return {'documents': relevant_chunks, 'web_search': web_search}
+
+
+def rewrite_node(state: CRAGState):
+    previous_query = state.get('search_query', 'none')
+    search_query = rewrite_chain.invoke({'question': state['question'], 'previous_query': previous_query})
+    return {'search_query': search_query}
