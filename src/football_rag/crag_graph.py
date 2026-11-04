@@ -72,3 +72,27 @@ def rewrite_node(state: CRAGState):
     previous_query = state.get('search_query', 'none')
     search_query = rewrite_chain.invoke({'question': state['question'], 'previous_query': previous_query})
     return {'search_query': search_query}
+
+
+def web_search_node(state: CRAGState):
+    result = search_wikipedia.invoke({'query': state['search_query']})
+    attempts = state['attempts'] + 1
+    return {'documents': [result], 'attempts': attempts}
+
+
+def generate_node(state: CRAGState):
+    context = '\n\n'.join(state['documents'])
+    answer = generate_chain.invoke({'question': state['question'], 'context': context})
+    return {'answer': answer}
+
+
+def route_after_grade(state: CRAGState):
+    if state['web_search']:
+        return 'rewrite'
+    return 'generate'
+
+
+def route_after_generate(state: CRAGState):
+    if NOT_FOUND in state['answer'] and state['attempts'] < MAX_WEB_ATTEMPTS:
+        return 'rewrite'
+    return END
