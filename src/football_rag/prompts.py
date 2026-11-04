@@ -32,3 +32,10 @@ GENERATE_SYSTEM = (
     'Answer only from the provided context and never use your own knowledge. '
     "If the context does not contain the answer, reply exactly: 'I couldn't find that.'"
 )
+
+
+JUDGE_SYSTEM = (
+    "Compare the model answer with the reference, ignore wording and length. "
+    "If the reference is 'Refusal', the answer is CORRECT when the model says it could not find or does not have the answer, in any wording. "
+    "Reply with one word: CORRECT or INCORRECT. "
+)
