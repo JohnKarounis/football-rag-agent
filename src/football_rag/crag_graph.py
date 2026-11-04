@@ -96,3 +96,33 @@ def route_after_generate(state: CRAGState):
     if NOT_FOUND in state['answer'] and state['attempts'] < MAX_WEB_ATTEMPTS:
         return 'rewrite'
     return END
+
+
+def build_crag_graph():
+    """Build the CRAG graph."""
+    builder = StateGraph(CRAGState)
+
+    builder.add_node('retrieve', retrieve_node)
+    builder.add_node('grade', grade_node)
+    builder.add_node('rewrite', rewrite_node)
+    builder.add_node('web_search', web_search_node)
+    builder.add_node('generate', generate_node)
+
+    builder.add_edge(START, 'retrieve')
+    builder.add_edge('retrieve', 'grade')
+    builder.add_conditional_edges('grade', route_after_grade)
+    builder.add_edge('rewrite', 'web_search')
+    builder.add_edge('web_search', 'generate')
+    builder.add_conditional_edges('generate', route_after_generate)
+
+    graph = builder.compile()
+    return graph
+
+
+crag_graph = build_crag_graph()
+
+
+def run_crag(question):
+    """Run the CRAG graph on one question and return the answer."""
+    result = crag_graph.invoke({'question': question, 'attempts': 0})
+    return result['answer']
