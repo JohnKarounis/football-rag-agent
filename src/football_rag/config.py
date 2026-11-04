@@ -19,3 +19,6 @@ SKIP_SECTIONS = ["See also", "References", "External links", "Notes"]
 
 # Retrieval 
 TOP_K = 10
+
+# Eval
+EVAL_DIR = ROOT / "data" / "eval"
