@@ -105,6 +105,18 @@ def build_store():
     return store
 
 
+def load_store():
+    """Open the existing Chroma collection built by build_store()"""
+
+    store = Chroma(
+        collection_name=config.COLLECTION,
+        embedding_function=get_embeddings(),
+        persist_directory=str(config.CHROMA_DIR)
+    )
+
+    return store 
+
+
 if __name__ == '__main__':
     store = build_store()
     print(store._collection.count())
