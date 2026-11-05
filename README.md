@@ -2,7 +2,7 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The agents, CRAG and evaluation are migrated from the notebook into modules; the retrieval experiments notebook and the production phase (FastAPI, guardrail, tracing, Docker) are next.
+**Status:** Work in progress. The agents, CRAG, evaluation and retrieval experiments are done; the production phase (FastAPI, guardrail, tracing, Docker) is next.
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph
 
@@ -20,15 +20,15 @@ The agents and CRAG tie on accuracy, but CRAG makes about twice as many LLM call
 
 The one held-out miss is the same for all three: the corpus text names the wrong Morocco goalscorer against Belgium, so it is a data error, not an agent error.
 
-### What didn't help
+### Retrieval experiments
 
-Measured in the notebook on the same eval sets, none of these beat the baseline:
+Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](notebooks/01_retrieval_experiments.ipynb) (hit@3/5/10, MRR):
 
-- Chunk-size tuning on its own
-- LLM query rewriting before retrieval (it leaked the model's own knowledge into the query)
-- Cross-encoder reranking (two models tried)
-- Hybrid BM25 + cosine with reciprocal rank fusion
-- `Qwen3-Embedding-0.6B` instead of `nomic-embed-text-v1.5`
+- **Structure-based chunking** beats fixed-size chunking at every size; the pipeline uses 100-word chunks with 20 overlap.
+- **LLM query rewriting:** no gain (MRR 0.80 → 0.78), and an extra LLM call per query.
+- **Cross-encoder reranking** (bge-reranker-base, ms-marco-MiniLM): mixed. One improves MRR, the other hit@10, and neither is worth a model plus latency on every query when the agents already score 100% on tuning.
+- **Hybrid BM25 + cosine with RRF:** worse at every weighting.
+- **`nomic-embed-text-v1.5`** beats `Qwen3-Embedding-0.6B` on every metric (MRR 0.79 vs 0.71).
 
 ## How it works
 
@@ -51,6 +51,8 @@ Measured in the notebook on the same eval sets, none of these beat the baseline:
 data/
   corpus/       5 Wikipedia articles
   eval/         hand_written (18), tuning (30), held_out (11)
+notebooks/
+  01_retrieval_experiments.ipynb  numpy RAG baseline and retrieval experiments
 src/football_rag/
   config.py     paths, models, chunking and retrieval settings
   embeddings.py nomic embeddings with document/query prefixes
