@@ -6,7 +6,7 @@ A portfolio-quality AI engineering project: question answering over football kno
 2. **Agent** (model controls retrieval via tools): hand-written loop, then LangGraph.
 3. **Corrective RAG (CRAG)** (graph-controlled workflow with chunk grading + web fallback), compared against the agent.
 
-The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and is being migrated into this repo stage by stage. Next: retrieval experiments notebook, then **Phase 5 — production** (FastAPI, guardrail, cost/latency, observability, Docker).
+The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and is being migrated into this repo stage by stage. Next: `scripts/fetch_corpus.py`, tests, then **Phase 5 — production** (FastAPI, guardrail, cost/latency, observability, Docker).
 
 Everything runs locally and free. No paid APIs.
 
@@ -22,6 +22,7 @@ Everything runs locally and free. No paid APIs.
 ```
 data/corpus/      5 Wikipedia articles (.txt)
 data/eval/        hand_written.json (18), tuning.json (30), held_out.json (11)
+notebooks/        01_retrieval_experiments.ipynb (numpy RAG baseline + retrieval experiments; imports from football_rag)
 src/football_rag/
   config.py       paths (ROOT, CORPUS_DIR, EVAL_DIR, CHROMA_DIR), models, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
   embeddings.py   NomicEmbeddings, get_embeddings()
@@ -69,8 +70,8 @@ Notebook timings: LangGraph 2m41s / 34s, CRAG 5m01s / 1m11s (tuning / held-out).
 
 **Conclusion:** agent and CRAG tie on accuracy; CRAG costs ~2× latency/LLM calls. The agent is the default design; CRAG is kept as a measured alternative.
 
-### Experiments that did NOT help (for the README and notebook)
-Chunk-size tuning alone, LLM query rewriting (leaked model knowledge), cross-encoder reranking (2 models), hybrid BM25 + cosine with RRF. `nomic` beat `Qwen3-Embedding-0.6B` on this corpus.
+### Retrieval experiments
+From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): structure-based chunking beats fixed at every size (100/20: MRR 0.80 vs 0.73); LLM query rewriting no gain (MRR 0.80 → 0.78); reranking mixed (MiniLM best MRR 0.85, bge best hit@10 1.0), not adopted; hybrid BM25 + RRF worse at every weighting; nomic beats Qwen3-Embedding-0.6B (MRR 0.79 vs 0.71). The notebook's rewrites showed no knowledge leakage, so don't claim it.
 
 ## Known issues
 - **Morocco vs Belgium (held-out miss for all three):** the corpus names Saïss instead of Sabiri. Data error, not an agent error.
@@ -82,7 +83,7 @@ Chunk-size tuning alone, LLM query rewriting (leaked model knowledge), cross-enc
 - `evaluate.py` prints only at the end and saves nothing; a crash loses the whole run.
 
 ## Roadmap
-1. `notebooks/01_retrieval_experiments.ipynb`: raw numpy RAG, BM25/RRF, rerankers, rewrite, Qwen embeddings — the "what didn't help" evidence, kept permanently on main. Clean tracebacks; no re-fetch cell.
+1. Done: `notebooks/01_retrieval_experiments.ipynb` (numpy RAG class + 5 experiments, results in Markdown cells and a summary table).
 2. `scripts/fetch_corpus.py`: re-download the corpus (User-Agent + timeout).
 3. Tests.
 4. **Phase 5:** FastAPI (`/ask`, streaming); input guardrail node (`START → guardrail → model | END`, scope + injection checks); per-request timing and token counts, caching; LangSmith tracing; Docker.
