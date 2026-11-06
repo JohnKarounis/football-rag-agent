@@ -6,7 +6,7 @@ A portfolio-quality AI engineering project: question answering over football kno
 2. **Agent** (model controls retrieval via tools): hand-written loop, then LangGraph.
 3. **Corrective RAG (CRAG)** (graph-controlled workflow with chunk grading + web fallback), compared against the agent.
 
-The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and is being migrated into this repo stage by stage. Next: `scripts/fetch_corpus.py`, tests, then **Phase 5 — production** (FastAPI, guardrail, cost/latency, observability, Docker).
+The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Next: **Phase 5 — production** (FastAPI, guardrail, cost/latency, observability, Docker).
 
 Everything runs locally and free. No paid APIs.
 
@@ -23,6 +23,8 @@ Everything runs locally and free. No paid APIs.
 data/corpus/      5 Wikipedia articles (.txt)
 data/eval/        hand_written.json (18), tuning.json (30), held_out.json (11)
 notebooks/        01_retrieval_experiments.ipynb (numpy RAG baseline + retrieval experiments; imports from football_rag)
+scripts/          fetch_corpus.py (re-downloads the 5 articles; overwrites data/corpus — don't run casually)
+tests/            test_ingest.py (headings, years, breadcrumbs, 565 chunks), test_eval_data.py (sizes, keys, phrases in corpus, no held-out overlap); no LM Studio or Chroma needed
 src/football_rag/
   config.py       paths (ROOT, CORPUS_DIR, EVAL_DIR, CHROMA_DIR), models, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
   embeddings.py   NomicEmbeddings, get_embeddings()
@@ -36,7 +38,7 @@ src/football_rag/
   crag_graph.py   CRAGState, GradeChunk, chains, nodes, build_crag_graph, run_crag
   evaluate.py     load_eval_set, evaluate_agent; __main__ scores the chain and all three agents
 ```
-Run with `python -m football_rag.ingest` and `python -m football_rag.evaluate`.
+Run with `python -m football_rag.ingest`, `python -m football_rag.evaluate` and `pytest`. Run `pytest` before committing changes to ingestion or eval data.
 
 ## Data / corpus
 - 5 Wikipedia articles fetched via the MediaWiki API (`prop=extracts`, `explaintext=1`): 2022 FIFA World Cup, UEFA Euro 2024, FIFA World Cup, Premier League, Offside (association football).
@@ -86,8 +88,8 @@ From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): 
 
 ## Roadmap
 1. Done: `notebooks/01_retrieval_experiments.ipynb` (numpy RAG class + 5 experiments, results in Markdown cells and a summary table).
-2. `scripts/fetch_corpus.py`: re-download the corpus (User-Agent + timeout).
-3. Tests.
+2. Done: `scripts/fetch_corpus.py` (User-Agent + timeout + `raise_for_status`).
+3. Done: tests (9, pytest). Later: tests for CRAG routing functions (needs crag_graph import without loading the store/LLM).
 4. **Phase 5:** FastAPI (`/ask`, streaming); input guardrail node (`START → guardrail → model | END`, scope + injection checks); per-request timing and token counts, caching; LangSmith tracing; Docker.
 
 **Later / optional:** `grader_chain.batch(...)` to parallelise CRAG grading; small fine-tuned grader or guardrail classifier; table-aware ingestion; conversation memory; supervisor + SQL stats agent.
