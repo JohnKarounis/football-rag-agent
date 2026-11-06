@@ -10,15 +10,18 @@ Football Q&A built in measured stages: RAG from scratch with numpy, then LangCha
 
 LLM-as-judge (Qwen), judged against reference answers.
 
-| Agent | Tuning (48) | Held-out (11) |
+| System | Tuning (48) | Held-out (11) |
 |---|---|---|
+| LangChain RAG chain | 94% | 91% |
 | Hand-written agent loop | 100% | 91% |
 | LangGraph agent | 100% | 91% |
 | CRAG | 100% | 91% |
 
+The fixed RAG chain retrieves once and has no Wikipedia fallback or scope rule, so it misses tuning questions the agents get right. The held-out set has no Wikipedia-only or out-of-scope questions yet, which is why the chain ties there.
+
 The agents and CRAG tie on accuracy, but CRAG makes about twice as many LLM calls (one grader call per retrieved chunk), so the LangGraph agent is the default design.
 
-The one held-out miss is the same for all three: the corpus text names the wrong Morocco goalscorer against Belgium, so it is a data error, not an agent error.
+The one held-out miss is the same for all four: the corpus text names the wrong Morocco goalscorer against Belgium, so it is a data error, not an agent error.
 
 ### Retrieval experiments
 
@@ -38,12 +41,14 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 - `search_football_docs(query, prefer_recent=False)`: top 10 chunks; `prefer_recent` re-sorts the top 20 by year
 - `search_wikipedia(query)`: top 3 Wikipedia article intros, the fallback for anything not in the corpus
 
+**RAG chain** (`rag_chain.py`): LCEL `retriever | prompt | llm`. Always retrieves once, then answers only from those chunks.
+
 **Agents:**
 - `agent_loop.py`: hand-written tool-calling loop on the OpenAI client
 - `agent_graph.py`: the same agent as a LangGraph `model ↔ tools` graph
 - `crag_graph.py`: Corrective RAG: retrieve → grade each chunk → generate, or rewrite the query → Wikipedia → generate, with up to 2 web attempts
 
-**Evaluation** (`evaluate.py`): runs each agent on the eval sets and scores the answers with an LLM judge. Unanswerable questions expect a refusal.
+**Evaluation** (`evaluate.py`): runs the chain and each agent on the eval sets and scores the answers with an LLM judge. Unanswerable questions expect a refusal.
 
 ## Project layout
 
@@ -60,6 +65,7 @@ src/football_rag/
   tools.py      retrieval and Wikipedia tools
   prompts.py    all system prompts
   llm.py        shared chat model
+  rag_chain.py  LangChain RAG chain (LCEL)
   agent_loop.py hand-written agent
   agent_graph.py LangGraph agent
   crag_graph.py Corrective RAG graph
