@@ -2,7 +2,7 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The agents, CRAG, evaluation and retrieval experiments are done; the production phase (FastAPI, guardrail, tracing, Docker) is next.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments and tests are done; the production phase (FastAPI, guardrail, tracing, Docker) is next.
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph
 
@@ -58,6 +58,9 @@ data/
   eval/         hand_written (18), tuning (30), held_out (11)
 notebooks/
   01_retrieval_experiments.ipynb  numpy RAG baseline and retrieval experiments
+scripts/
+  fetch_corpus.py  re-download the Wikipedia corpus
+tests/          unit tests for ingestion and the eval sets
 src/football_rag/
   config.py     paths, models, chunking and retrieval settings
   embeddings.py nomic embeddings with document/query prefixes
@@ -75,9 +78,9 @@ src/football_rag/
 ## Setup
 
 1. Install [LM Studio](https://lmstudio.ai), load `qwen/qwen3.8-27b` and `text-embedding-nomic-embed-text-v1.5`, and start the server on `http://localhost:1234`.
-2. Install the package:
+2. Install the package (`dev` adds pytest):
    ```
-   pip install -e .
+   pip install -e ".[dev]"
    ```
 3. Build the index:
    ```
@@ -91,6 +94,12 @@ src/football_rag/
    ```
    python -m football_rag.evaluate
    ```
+6. Run the tests (no LM Studio needed):
+   ```
+   pytest
+   ```
+
+The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.py` re-downloads it from Wikipedia, but it overwrites the committed articles and the current text may no longer match the eval phrases.
 
 ## Known limitations
 
