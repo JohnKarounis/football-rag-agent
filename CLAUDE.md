@@ -30,10 +30,11 @@ src/football_rag/
   tools.py        search_football_docs, search_wikipedia, agent_tools
   prompts.py      SYSTEM, GRADER_SYSTEM, REWRITE_SYSTEM, GENERATE_SYSTEM, JUDGE_SYSTEM
   llm.py          get_llm()
+  rag_chain.py    rag_chain, run_chain (retrieve once → answer; no tools, no scope rule)
   agent_loop.py   run_agent (hand-written loop, OpenAI client)
   agent_graph.py  build_graph(llm, tools, system_prompt), run_graph
   crag_graph.py   CRAGState, GradeChunk, chains, nodes, build_crag_graph, run_crag
-  evaluate.py     load_eval_set, evaluate_agent; __main__ scores all three agents
+  evaluate.py     load_eval_set, evaluate_agent; __main__ scores the chain and all three agents
 ```
 Run with `python -m football_rag.ingest` and `python -m football_rag.evaluate`.
 
@@ -62,6 +63,7 @@ Run with `python -m football_rag.ingest` and `python -m football_rag.evaluate`.
 ## Results (judge rate)
 | System | Tuning (48) | Held-out (11) |
 |---|---|---|
+| RAG chain (LCEL) | 0.94 | 0.91 |
 | Agent — hand-written loop | 1.00 | 0.91 |
 | Agent — LangGraph | 1.00 | 0.91 |
 | CRAG + retry | 1.00 | 0.91 |
@@ -74,7 +76,7 @@ Notebook timings: LangGraph 2m41s / 34s, CRAG 5m01s / 1m11s (tuning / held-out).
 From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): structure-based chunking beats fixed at every size (100/20: MRR 0.80 vs 0.73); LLM query rewriting no gain (MRR 0.80 → 0.78); reranking mixed (MiniLM best MRR 0.85, bge best hit@10 1.0), not adopted; hybrid BM25 + RRF worse at every weighting; nomic beats Qwen3-Embedding-0.6B (MRR 0.79 vs 0.71). The notebook's rewrites showed no knowledge leakage, so don't claim it.
 
 ## Known issues
-- **Morocco vs Belgium (held-out miss for all three):** the corpus names Saïss instead of Sabiri. Data error, not an agent error.
+- **Morocco vs Belgium (held-out miss for all four):** the corpus names Saïss instead of Sabiri. Data error, not an agent error.
 - **Tables are dropped** at ingestion (`explaintext`). Real fix: parse HTML tables to Markdown.
 - `max_year` is a heuristic (2022 chunks mentioning 2026 get 2026).
 - The model sometimes leaks its own knowledge into search queries.
@@ -96,7 +98,7 @@ From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): 
 - Every file ends with a trailing newline.
 
 ## How to work with John
-- **John makes every change himself** (code, files, commits, pushes, PRs). Give him the code and commands; don't edit the repo unless he says so. Reading code, files, git and GitHub never needs permission.
+- **John makes every change himself** (code, files, commits, pushes, PRs). Give him the code and commands; don't edit the repo unless he says so. **Exception:** Claude writes and updates `README.md` and `CLAUDE.md` directly; John reviews and commits them. Reading code, files, git and GitHub never needs permission.
 - Short, direct answers. Elaborate only when asked.
 - Plain, readable code: one step per line, named intermediates, no calls crammed into loop headers, no clever one-liners. Don't over-engineer; stay close to the notebook style.
 - Explain how a concept works before implementing it, and lay out the whole plan (files, commits) up front.

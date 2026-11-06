@@ -11,6 +11,7 @@ from football_rag.prompts import JUDGE_SYSTEM
 from football_rag.agent_loop import run_agent
 from football_rag.agent_graph import run_graph
 from football_rag.crag_graph import run_crag
+from football_rag.rag_chain import run_chain
 
 judge_prompt = ChatPromptTemplate.from_messages([
     ('system', JUDGE_SYSTEM),
@@ -52,7 +53,7 @@ if __name__ == '__main__':
     tuning_set = load_eval_set('hand_written') + load_eval_set('tuning')
     held_out = load_eval_set('held_out')
 
-    agents = {'Agent loop': run_agent, 'LangGraph agent': run_graph, 'CRAG': run_crag}
+    agents = {'RAG chain': run_chain, 'Agent loop': run_agent, 'LangGraph agent': run_graph, 'CRAG': run_crag}
     for name, agent_func in agents.items():
         tuning_metrics, _ = evaluate_agent(agent_func, tuning_set)
         held_out_metrics, _ = evaluate_agent(agent_func, held_out)

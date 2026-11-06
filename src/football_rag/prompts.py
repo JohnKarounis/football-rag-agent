@@ -39,3 +39,6 @@ JUDGE_SYSTEM = (
     "If the reference is 'Refusal', the answer is CORRECT when the model says it could not find or does not have the answer, in any wording. "
     "Reply with one word: CORRECT or INCORRECT. "
 )
+
+
+RAG_SYSTEM = 'Answer ONLY from context. If the context does not contain the answer, say that you do not have the answer.'
