@@ -27,3 +27,9 @@ def test_ask_returns_answer(monkeypatch):
     assert response.status_code == 200
     assert body['answer'] == FAKE_ANSWER
     assert 'latency_ms' in body 
+
+
+def test_ask_rejects_empty_question():
+    """An empty question is rejected with 422."""
+    response = client.post('/v1/ask', json={'question': ''})
+    assert response.status_code == 422
