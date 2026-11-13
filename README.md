@@ -2,7 +2,7 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments and tests are done; the production phase (FastAPI, guardrail, tracing, Docker) is next.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests and the FastAPI service are done; next are an input guardrail, tracing, Docker and CI.
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph
 
@@ -50,6 +50,11 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 
 **Evaluation** (`evaluate.py`): runs the chain and each agent on the eval sets and scores the answers with an LLM judge. Unanswerable questions expect a refusal.
 
+**API** (`api/`): FastAPI service in front of the LangGraph agent.
+- `POST /v1/ask`: takes `{"question": "..."}` (1–500 characters, validated by Pydantic; anything else gets a 422) and returns `{"answer": "...", "latency_ms": ...}`
+- `GET /health`: liveness check
+- Interactive docs at `/docs`. Each request is logged with the question length and latency; the LLM client has a 50-second timeout.
+
 ## Project layout
 
 ```
@@ -60,8 +65,11 @@ notebooks/
   01_retrieval_experiments.ipynb  numpy RAG baseline and retrieval experiments
 scripts/
   fetch_corpus.py  re-download the Wikipedia corpus
-tests/          unit tests for ingestion and the eval sets
+tests/          unit tests for ingestion, the eval sets and the API
 src/football_rag/
+  api/
+    main.py     FastAPI app: /v1/ask and /health
+    schemas.py  request and response models
   config.py     paths, models, chunking and retrieval settings
   embeddings.py nomic embeddings with document/query prefixes
   ingest.py     build and load the Chroma index
@@ -90,11 +98,15 @@ src/football_rag/
    ```
    python -c "from football_rag.agent_graph import run_graph; print(run_graph('Who won Euro 2024?'))"
    ```
-5. Run the evaluation:
+5. Serve the API, then open http://127.0.0.1:8000/docs:
+   ```
+   uvicorn football_rag.api.main:app --reload
+   ```
+6. Run the evaluation:
    ```
    python -m football_rag.evaluate
    ```
-6. Run the tests (no LM Studio needed):
+7. Run the tests (no LM Studio needed; the API tests replace the agent with a fake):
    ```
    pytest
    ```

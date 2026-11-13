@@ -6,7 +6,7 @@ A portfolio-quality AI engineering project: question answering over football kno
 2. **Agent** (model controls retrieval via tools): hand-written loop, then LangGraph.
 3. **Corrective RAG (CRAG)** (graph-controlled workflow with chunk grading + web fallback), compared against the agent.
 
-The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Next: **Phase 5 — production** (FastAPI, guardrail, cost/latency, observability, Docker).
+The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Phase 5 — production — is in progress: FastAPI is done; next are the guardrail, cost/latency, observability, Docker and CI.
 
 Everything runs locally and free. No paid APIs.
 
@@ -24,21 +24,23 @@ data/corpus/      5 Wikipedia articles (.txt)
 data/eval/        hand_written.json (18), tuning.json (30), held_out.json (11)
 notebooks/        01_retrieval_experiments.ipynb (numpy RAG baseline + retrieval experiments; imports from football_rag)
 scripts/          fetch_corpus.py (re-downloads the 5 articles; overwrites data/corpus — don't run casually)
-tests/            test_ingest.py (headings, years, breadcrumbs, 565 chunks), test_eval_data.py (sizes, keys, phrases in corpus, no held-out overlap); no LM Studio or Chroma needed
+tests/            test_ingest.py (headings, years, breadcrumbs, 565 chunks), test_eval_data.py (sizes, keys, phrases in corpus, no held-out overlap), test_api.py (health, ask with fake agent via monkeypatch, 422 on empty/too-long); 13 tests, no LM Studio needed (test_api imports agent_graph, which loads the local chroma_db)
 src/football_rag/
+  api/main.py     FastAPI app: POST /v1/ask (run_graph, latency_ms, one log line per request with question length + latency), GET /health; run with `uvicorn football_rag.api.main:app --reload`
+  api/schemas.py  AskRequest (question, 1..MAX_QUESTION_CHARS=500), AskResponse (answer, latency_ms)
   config.py       paths (ROOT, CORPUS_DIR, EVAL_DIR, CHROMA_DIR), models, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
   embeddings.py   NomicEmbeddings, get_embeddings()
   ingest.py       load_docs, split_docs, add_breadcrumbs, build_store, load_store; __main__ rebuilds the index
   tools.py        search_football_docs, search_wikipedia, agent_tools
   prompts.py      SYSTEM, GRADER_SYSTEM, REWRITE_SYSTEM, GENERATE_SYSTEM, JUDGE_SYSTEM
-  llm.py          get_llm()
+  llm.py          get_llm() (temperature 0, LLM_TIMEOUT = 50 s)
   rag_chain.py    rag_chain, run_chain (retrieve once → answer; no tools, no scope rule)
   agent_loop.py   run_agent (hand-written loop, OpenAI client)
   agent_graph.py  build_graph(llm, tools, system_prompt), run_graph
   crag_graph.py   CRAGState, GradeChunk, chains, nodes, build_crag_graph, run_crag
   evaluate.py     load_eval_set, evaluate_agent; __main__ scores the chain and all three agents
 ```
-Run with `python -m football_rag.ingest`, `python -m football_rag.evaluate` and `pytest`. Run `pytest` before committing changes to ingestion or eval data.
+Run with `python -m football_rag.ingest`, `python -m football_rag.evaluate`, `uvicorn football_rag.api.main:app --reload` and `pytest`. Run `pytest` before every code commit. Teaching mode for new topics (e.g. the API): explain the concept and give a skeleton/step list, let John write the code, then review — don't hand over full code unless asked.
 
 ## Data / corpus
 - 5 Wikipedia articles fetched via the MediaWiki API (`prop=extracts`, `explaintext=1`): 2022 FIFA World Cup, UEFA Euro 2024, FIFA World Cup, Premier League, Offside (association football).
@@ -89,21 +91,21 @@ From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): 
 ## Roadmap
 1. Done: `notebooks/01_retrieval_experiments.ipynb` (numpy RAG class + 5 experiments, results in Markdown cells and a summary table).
 2. Done: `scripts/fetch_corpus.py` (User-Agent + timeout + `raise_for_status`).
-3. Done: tests (9, pytest). Later: tests for CRAG routing functions (needs crag_graph import without loading the store/LLM).
-4. **Phase 5:** FastAPI (`/ask`, streaming); input guardrail node (`START → guardrail → model | END`, scope + injection checks); per-request timing and token counts, caching; LangSmith tracing; Docker.
+3. Done: tests (pytest). Later: tests for CRAG routing functions (needs crag_graph import without loading the store/LLM).
+4. Done: `feat/api` — FastAPI `/v1/ask` + `/health`, Pydantic schemas, LLM timeout, request logging, API tests. Decided: no rate limiting or background jobs (single-user local app, LM Studio is the bottleneck); API key auth only if deployed. Later option: strip whitespace-only questions; streaming.
+5. **Phase 5 (rest):** input guardrail node (`START → guardrail → model | END`, scope + injection checks); per-request timing and token counts, caching; LangSmith tracing; Docker; GitHub Actions CI running `pytest` on every push/PR.
 
 **Later / optional:** `grader_chain.batch(...)` to parallelise CRAG grading; small fine-tuned grader or guardrail classifier; table-aware ingestion; conversation memory; supervisor + SQL stats agent.
 
 ## Git workflow
 - One feature branch per stage (`feat/...`), small tested commits, push, PR with **What / Test** sections, merge commit, delete the branch, then `git switch main`, `git pull`, `git branch -d`.
 - Stage files explicitly when there are untracked files that don't belong in the commit.
-- Every file ends with a trailing newline.
 
 ## How to work with John
 - **John makes every change himself** (code, files, commits, pushes, PRs). Give him the code and commands; don't edit the repo unless he says so. **Exception:** Claude writes and updates `README.md` and `CLAUDE.md` directly; John reviews and commits them. Reading code, files, git and GitHub never needs permission.
 - Short, direct answers. Elaborate only when asked.
 - Plain, readable code: one step per line, named intermediates, no calls crammed into loop headers, no clever one-liners. Don't over-engineer; stay close to the notebook style.
 - Explain how a concept works before implementing it, and lay out the whole plan (files, commits) up front.
-- Before each commit, check the file: run it or test it live, look for typos and a missing trailing newline.
+- Before each commit, check the file: run it or test it live, look for bugs and typos. Don't flag whitespace (blank lines, trailing newlines).
 - Flag bugs clearly; own your own mistakes briefly and move on.
 - Every change is judged by the evals: tuning set while iterating, held-out once at the end.
