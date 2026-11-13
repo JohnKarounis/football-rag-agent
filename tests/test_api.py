@@ -13,7 +13,17 @@ def fake_agent(question):
 
 
 def test_health():
-    """Test the /health endpoint. /health returns 200 with status ok."""
+    """/health returns 200 with status ok."""
     response = client.get('/health')
     assert response.status_code == 200
     assert response.json() == {'status': 'ok'}
+
+
+def test_ask_returns_answer(monkeypatch):
+    """/v1/ask returns the answer and latency."""
+    monkeypatch.setattr(main, 'run_graph', fake_agent)
+    response = client.post('/v1/ask', json={'question': 'Who won the Euro 2024?'})
+    body = response.json()
+    assert response.status_code == 200
+    assert body['answer'] == FAKE_ANSWER
+    assert 'latency_ms' in body 
