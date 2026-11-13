@@ -3,6 +3,7 @@
 from fastapi.testclient import TestClient
 
 from football_rag.api import main
+from football_rag.api.schemas import MAX_QUESTION_CHARS
 
 client = TestClient(main.app)
 FAKE_ANSWER = "Spain won Euro 2024"
@@ -32,4 +33,11 @@ def test_ask_returns_answer(monkeypatch):
 def test_ask_rejects_empty_question():
     """An empty question is rejected with 422."""
     response = client.post('/v1/ask', json={'question': ''})
+    assert response.status_code == 422
+
+
+def test_ask_rejects_long_question():
+    """A long question is rejected with 422."""
+    long_question = 'a' * (MAX_QUESTION_CHARS + 1)
+    response = client.post('/v1/ask', json={'question': long_question})
     assert response.status_code == 422
