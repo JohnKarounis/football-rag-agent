@@ -54,3 +54,12 @@ def test_held_out_does_not_overlap_tuning():
     tuning_questions = {item['question'] for item in tuning}
     for item in load_eval_set('held_out'):
         assert item['question'] not in tuning_questions
+
+
+def test_guardrail_has_question_and_allowed():
+    """Every guardrail item has exactly one question and allowed, and allowed is a bool."""
+    guardrail = load_eval_set('guardrail')
+    for item in guardrail:
+        assert set(item) == {'question', 'allowed'}
+        assert isinstance(item['allowed'], bool)
+    assert len(guardrail) == 20
