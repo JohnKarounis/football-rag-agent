@@ -1,15 +1,25 @@
 """LangGraph tool-calling agent."""
 
-from langchain_core.messages import SystemMessage, HumanMessage
-from langgraph.graph import StateGraph, MessagesState, START
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.errors import GraphRecursionError
 
 from football_rag.llm import get_llm
 from football_rag.prompts import SYSTEM
 from football_rag.tools import agent_tools
+from football_rag.input_guardrail import check_question
 
-RECURSION_LIMIT = 12 
+RECURSION_LIMIT = 12
+REFUSAL = 'I can only help with football.'
+
+def guardrail_node(state: MessagesState):
+    """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
+    question = state['messages'][-1].content
+    decision = check_question(question)
+    if not decision.allowed:
+        return {'messages': [AIMessage(content=REFUSAL)]}
+    return {}
 
 
 def build_graph(llm, tools, system_prompt):
