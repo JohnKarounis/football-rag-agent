@@ -1,15 +1,33 @@
 """LangGraph tool-calling agent."""
 
-from langchain_core.messages import SystemMessage, HumanMessage
-from langgraph.graph import StateGraph, MessagesState, START
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.errors import GraphRecursionError
 
 from football_rag.llm import get_llm
 from football_rag.prompts import SYSTEM
 from football_rag.tools import agent_tools
+from football_rag.input_guardrail import check_question
 
-RECURSION_LIMIT = 12 
+RECURSION_LIMIT = 12
+REFUSAL = 'I can only help with football.'
+
+def guardrail_node(state: MessagesState):
+    """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
+    question = state['messages'][-1].content
+    decision = check_question(question)
+    if not decision.allowed:
+        return {'messages': [AIMessage(content=REFUSAL)]}
+    return {}
+
+
+def route_after_guardrail(state: MessagesState):
+    """Go to END if the guardrail added a refusal, otherwise to the model."""
+    last_message = state['messages'][-1]
+    if isinstance(last_message, AIMessage):
+        return END
+    return 'model'
 
 
 def build_graph(llm, tools, system_prompt):
@@ -25,10 +43,12 @@ def build_graph(llm, tools, system_prompt):
     builder = StateGraph(MessagesState)
     builder.add_node('model', call_model)
     builder.add_node('tools', ToolNode(tools))
+    builder.add_node('guardrail', guardrail_node)
 
-    builder.add_edge(START, 'model')
+    builder.add_edge(START, 'guardrail')
     builder.add_conditional_edges('model', tools_condition)
     builder.add_edge('tools', 'model')
+    builder.add_conditional_edges('guardrail', route_after_guardrail, ['model', END])
 
     graph = builder.compile()
     return graph
