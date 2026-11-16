@@ -12,6 +12,7 @@ from football_rag.agent_loop import run_agent
 from football_rag.agent_graph import run_graph
 from football_rag.crag_graph import run_crag
 from football_rag.rag_chain import run_chain
+from football_rag.input_guardrail import check_question
 
 judge_prompt = ChatPromptTemplate.from_messages([
     ('system', JUDGE_SYSTEM),
@@ -49,12 +50,42 @@ def evaluate_agent(agent_func, eval_set):
     return {'Judge Rate': judge_rate}, results
 
 
+def evaluate_guardrail(eval_set):
+    """Check the guardrail's decision on each question against its label."""
+    results = []
+    for item in eval_set:
+        question = item['question']
+        decision = check_question(question)
+        expected = item['allowed']
+        predicted = decision.allowed
+        correct = predicted == expected
+        results.append({'Question': question, 'Expected': expected, 'Predicted': predicted, 'Correct': correct, 'Reason': decision.reason})
+
+    num_correct = sum([r['Correct'] for r in results])
+    accuracy = num_correct / len(results)
+    false_blocks = 0
+    missed_blocks = 0
+    for result in results:
+        if result['Expected'] and not result['Predicted']:
+            false_blocks += 1
+        if not result['Expected'] and result['Predicted']:
+            missed_blocks += 1
+
+    metrics = {'Accuracy': accuracy, 'False Blocks': false_blocks, 'Missed Blocks': missed_blocks}
+    return metrics, results
+
+
 if __name__ == '__main__':
     tuning_set = load_eval_set('hand_written') + load_eval_set('tuning')
     held_out = load_eval_set('held_out')
+    guardrail_set = load_eval_set('guardrail')
+
+    guardrail_metrics, _ = evaluate_guardrail(guardrail_set)
+    print('Guardrail:', guardrail_metrics)
 
     agents = {'RAG chain': run_chain, 'Agent loop': run_agent, 'LangGraph agent': run_graph, 'CRAG': run_crag}
     for name, agent_func in agents.items():
         tuning_metrics, _ = evaluate_agent(agent_func, tuning_set)
         held_out_metrics, _ = evaluate_agent(agent_func, held_out)
-        print(name, '| tuning:', tuning_metrics, '| held-out:', held_out_metrics)
+        
+        print(name, '| Tuning:', tuning_metrics, '| Held-out:', held_out_metrics)
