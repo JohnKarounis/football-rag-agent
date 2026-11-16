@@ -13,6 +13,6 @@ def test_allowed_question_goes_to_model():
 
 def test_refusal_goes_to_end():
     """A refusal added by the guardrail ends the graph."""
-    state = {'messages': [HumanMessage(), AIMessage(content=REFUSAL)]}
+    state = {'messages': [HumanMessage(content='What is the capital of France?'), AIMessage(content=REFUSAL)]}
     next_node = route_after_guardrail(state)
     assert next_node == END
