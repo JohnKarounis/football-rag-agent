@@ -16,3 +16,10 @@ def test_refusal_goes_to_end():
     state = {'messages': [HumanMessage(content='What is the capital of France?'), AIMessage(content=REFUSAL)]}
     next_node = route_after_guardrail(state)
     assert next_node == END
+
+
+def test_refusal_text_from_user_goes_to_model():
+    """A user question that matches the refusal text still goes to the agent."""
+    state = {'messages': [HumanMessage(content=REFUSAL)]}
+    next_node = route_after_guardrail(state)
+    assert next_node == 'model'
