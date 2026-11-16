@@ -43,10 +43,12 @@ def build_graph(llm, tools, system_prompt):
     builder = StateGraph(MessagesState)
     builder.add_node('model', call_model)
     builder.add_node('tools', ToolNode(tools))
+    builder.add_node('guardrail', guardrail_node)
 
-    builder.add_edge(START, 'model')
+    builder.add_edge(START, 'guardrail')
     builder.add_conditional_edges('model', tools_condition)
     builder.add_edge('tools', 'model')
+    builder.add_conditional_edges('guardrail', route_after_guardrail, ['model', END])
 
     graph = builder.compile()
     return graph
