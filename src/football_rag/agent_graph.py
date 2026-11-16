@@ -22,6 +22,14 @@ def guardrail_node(state: MessagesState):
     return {}
 
 
+def route_after_guardrail(state: MessagesState):
+    """Go to END if the guardrail added a refusal, otherwise to the model."""
+    last_message = state['messages'][-1]
+    if isinstance(last_message, AIMessage):
+        return END
+    return 'model'
+
+
 def build_graph(llm, tools, system_prompt):
     """Build a model <-> tools agent graph."""
 
