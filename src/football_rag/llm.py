@@ -19,3 +19,16 @@ def get_llm():
     )
 
     return llm
+
+
+def count_tokens(usage_callback):
+    """Sum input and output tokens across all models in a usage callback."""
+    usage_by_model = usage_callback.usage_metadata
+
+    input_tokens = 0
+    output_tokens = 0
+    for usage in usage_by_model.values():
+        input_tokens += usage['input_tokens']
+        output_tokens += usage['output_tokens']
+
+    return input_tokens, output_tokens

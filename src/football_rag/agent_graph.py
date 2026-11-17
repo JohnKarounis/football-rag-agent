@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.errors import GraphRecursionError
 
-from football_rag.llm import get_llm
+from football_rag.llm import get_llm, count_tokens
 from football_rag.prompts import SYSTEM
 from football_rag.tools import agent_tools
 from football_rag.input_guardrail import check_question
@@ -76,11 +76,5 @@ def run_graph_with_usage(question):
     with get_usage_metadata_callback() as usage_callback:
         answer = run_graph(question)
 
-    usage_by_model = usage_callback.usage_metadata
-    input_tokens = 0
-    output_tokens = 0
-    for usage in usage_by_model.values():
-        input_tokens += usage['input_tokens']
-        output_tokens += usage['output_tokens']
-
+    input_tokens, output_tokens = count_tokens(usage_callback)
     return answer, input_tokens, output_tokens
