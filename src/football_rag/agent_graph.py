@@ -1,6 +1,7 @@
 """LangGraph tool-calling agent."""
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.callbacks import get_usage_metadata_callback
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.errors import GraphRecursionError
@@ -59,15 +60,27 @@ graph = build_graph(get_llm(), agent_tools, SYSTEM)
 
 def run_graph(question):
     """Run the agent graph on one question and return the final answer."""
-
     try:
         result = graph.invoke(
             {'messages': [HumanMessage(content=question)]},
             config={'recursion_limit': RECURSION_LIMIT}
         )
         answer = result['messages'][-1].content
-
     except GraphRecursionError:
         answer = "Stopped: reached the step limit"
-
     return answer
+
+
+def run_graph_with_usage(question):
+    """Run the agent graph on one question and return the answer with its token usage."""
+    with get_usage_metadata_callback() as usage_callback:
+        answer = run_graph(question)
+
+    usage_by_model = usage_callback.usage_metadata
+    input_tokens = 0
+    output_tokens = 0
+    for usage in usage_by_model.values():
+        input_tokens += usage['input_tokens']
+        output_tokens += usage['output_tokens']
+
+    return answer, input_tokens, output_tokens
