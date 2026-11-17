@@ -11,6 +11,8 @@ class AskRequest(BaseModel):
 
 
 class AskResponse(BaseModel):
-    """Answer returned by /v1/ask, with how long it took."""
+    """Answer returned by /v1/ask, with its latency and token usage."""
     answer: str = Field(description="The answer to return.")
     latency_ms: float = Field(description="Time taken to answer, in milliseconds.")
+    input_tokens: int = Field(description="Input tokens across all LLM calls for this request.")
+    output_tokens: int = Field(description="Output tokens across all LLM calls for this request.")

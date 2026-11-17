@@ -6,11 +6,13 @@ from football_rag.api import main
 from football_rag.api.schemas import MAX_QUESTION_CHARS
 
 client = TestClient(main.app)
-FAKE_ANSWER = "Spain won Euro 2024"
+FAKE_ANSWER = "Spain won Euro 2024" 
+FAKE_INPUT_TOKENS = 100
+FAKE_OUTPUT_TOKENS = 20
 
 def fake_agent(question):
-    """Stand-in for run_graph: ignores the question and returns FAKE_ANSWER."""
-    return FAKE_ANSWER
+    """Stand-in for run_graph_with_usage: ignores the question and returns a fixed answer and token counts."""
+    return FAKE_ANSWER, FAKE_INPUT_TOKENS, FAKE_OUTPUT_TOKENS
 
 
 def test_health():
@@ -21,13 +23,15 @@ def test_health():
 
 
 def test_ask_returns_answer(monkeypatch):
-    """/v1/ask returns the answer and latency."""
-    monkeypatch.setattr(main, 'run_graph', fake_agent)
+    """/v1/ask returns the answer, latency and token usage."""
+    monkeypatch.setattr(main, 'run_graph_with_usage', fake_agent)
     response = client.post('/v1/ask', json={'question': 'Who won the Euro 2024?'})
     body = response.json()
     assert response.status_code == 200
     assert body['answer'] == FAKE_ANSWER
     assert 'latency_ms' in body 
+    assert body['input_tokens'] == FAKE_INPUT_TOKENS
+    assert body['output_tokens'] == FAKE_OUTPUT_TOKENS
 
 
 def test_ask_rejects_empty_question():

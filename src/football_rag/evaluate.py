@@ -1,12 +1,14 @@
 """LLM-as-judge evaluation of the agents."""
 
 import json
+import time
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.callbacks import get_usage_metadata_callback
 
 from football_rag import config
-from football_rag.llm import get_llm
+from football_rag.llm import get_llm, count_tokens
 from football_rag.prompts import JUDGE_SYSTEM
 from football_rag.agent_loop import run_agent
 from football_rag.agent_graph import run_graph
@@ -30,11 +32,16 @@ def load_eval_set(name):
 
 
 def evaluate_agent(agent_func, eval_set):
-    """Run the agent on every question and score its answers with the judge."""
+    """Run the agent on every question, time it, count its tokens and score its answers with the judge."""
     results = []
     for item in eval_set:
         question = item['question']
-        answer = agent_func(question)
+        start_time = time.perf_counter()
+        with get_usage_metadata_callback() as usage_callback:
+            answer = agent_func(question)
+
+        latency_s = time.perf_counter() - start_time
+        input_tokens, output_tokens = count_tokens(usage_callback)
 
         expected = item['answer']
         if expected is None:
@@ -43,11 +50,15 @@ def evaluate_agent(agent_func, eval_set):
         verdict = judge_chain.invoke({'question': question, 'expected': expected, 'answer': answer})
         judged = verdict.strip().upper() == 'CORRECT'
 
-        results.append({'Question': question, 'Expected': expected, 'Answer': answer, 'Judge': judged})
+        results.append({'Question': question, 'Expected': expected, 'Answer': answer, 'Judge': judged, 'Latency (s)': latency_s, 'Input tokens': input_tokens, 'Output tokens': output_tokens})
 
     correct = sum(r['Judge'] for r in results)
     judge_rate = correct / len(results)
-    return {'Judge Rate': judge_rate}, results
+    avg_latency_s = sum([r['Latency (s)'] for r in results]) / len(results)
+    avg_input_tokens = sum([r['Input tokens'] for r in results]) / len(results)
+    avg_output_tokens = sum([r['Output tokens'] for r in results]) / len(results)
+    metrics = {'Judge Rate': judge_rate, 'Avg latency (s)': round(avg_latency_s, 2), 'Avg input tokens': round(avg_input_tokens), 'Avg output tokens': round(avg_output_tokens)}
+    return metrics, results
 
 
 def evaluate_guardrail(eval_set):

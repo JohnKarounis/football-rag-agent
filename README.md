@@ -2,24 +2,26 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service and the input guardrail are done; next are cost/latency tracking, tracing, Docker and CI.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, the input guardrail and per-request latency/token tracking are done; next are an output guardrail, tracing, Docker and CI.
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph
 
 ## Results
 
-LLM-as-judge (Qwen), judged against reference answers.
+LLM-as-judge (Qwen), judged against reference answers. Latency and tokens are averages per question on the tuning set, measured locally (so latency depends on the GPU); tokens are summed over every LLM call a question makes.
 
-| System | Tuning (48) | Held-out (11) |
-|---|---|---|
-| LangChain RAG chain | 94% | 91% |
-| Hand-written agent loop | 100% | 91% |
-| LangGraph agent | 100% | 91% |
-| CRAG | 100% | 91% |
+| System | Tuning (48) | Held-out (11) | Avg latency | Avg input tokens | Avg output tokens |
+|---|---|---|---|---|---|
+| LangChain RAG chain | 94% | 91% | 1.0 s | 1,379 | 26 |
+| Hand-written agent loop | 100% | 91% | 3.1 s | n/a | n/a |
+| LangGraph agent | 100% | 91% | 3.5 s | 3,256 | 161 |
+| CRAG | 98–100% | 91% | 7.1 s | 2,495 | 136 |
+
+The hand-written loop calls the OpenAI client directly, so LangChain's usage callback can't count its tokens. CRAG scored 100% on tuning in earlier runs and 98% (one question) in the latest; nothing in CRAG changed between them, so it is run-to-run variance.
 
 The fixed RAG chain retrieves once and has no Wikipedia fallback or scope rule, so it misses tuning questions the agents get right. The held-out set has no Wikipedia-only or out-of-scope questions yet, which is why the chain ties there.
 
-The agents and CRAG tie on accuracy, but CRAG makes about twice as many LLM calls (one grader call per retrieved chunk), so the LangGraph agent is the default design.
+The agents and CRAG tie on accuracy, but CRAG is about twice as slow, so the LangGraph agent is the default design. CRAG actually uses *fewer* tokens than the agent: its cost is the number of calls, not their size. It makes one small grader call per retrieved chunk (10 per question), and each call is a sequential round trip to the model. The agent makes fewer, larger calls, with all the chunks in one prompt plus the guardrail call. The RAG chain is the cheapest at a single call, but it has no fallback when retrieval misses.
 
 The one held-out miss is the same for all four: the corpus text names the wrong Morocco goalscorer against Belgium, so it is a data error, not an agent error.
 
@@ -62,12 +64,12 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 - `agent_graph.py`: the same agent as a LangGraph `model ↔ tools` graph, behind the input guardrail
 - `crag_graph.py`: Corrective RAG: retrieve → grade each chunk → generate, or rewrite the query → Wikipedia → generate, with up to 2 web attempts
 
-**Evaluation** (`evaluate.py`): scores the guardrail's decisions against its labels (accuracy, false blocks, missed blocks), then runs the chain and each agent on the eval sets and scores the answers with an LLM judge. Unanswerable questions expect a refusal.
+**Evaluation** (`evaluate.py`): scores the guardrail's decisions against its labels (accuracy, false blocks, missed blocks), then runs the chain and each agent on the eval sets and scores the answers with an LLM judge. Unanswerable questions expect a refusal. Each agent call is timed and wrapped in LangChain's usage callback, so every system also gets average latency and input/output tokens per question.
 
 **API** (`api/`): FastAPI service in front of the LangGraph agent.
-- `POST /v1/ask`: takes `{"question": "..."}` (1–500 characters, validated by Pydantic; anything else gets a 422) and returns `{"answer": "...", "latency_ms": ...}`
+- `POST /v1/ask`: takes `{"question": "..."}` (1–500 characters, validated by Pydantic; anything else gets a 422) and returns `{"answer": "...", "latency_ms": ..., "input_tokens": ..., "output_tokens": ...}`, with the tokens summed over every LLM call in the request (guardrail included)
 - `GET /health`: liveness check
-- Interactive docs at `/docs`. Each request is logged with the question length and latency; the LLM client has a 50-second timeout.
+- Interactive docs at `/docs`. Each request is logged with the question length, latency and token counts; the LLM client has a 50-second timeout.
 
 ## Project layout
 
@@ -115,7 +117,7 @@ src/football_rag/
    ```
 5. Serve the API, then open http://127.0.0.1:8000/docs:
    ```
-   uvicorn football_rag.api.main:app --reload
+   python -m uvicorn football_rag.api.main:app --reload
    ```
 6. Run the evaluation:
    ```
