@@ -16,7 +16,7 @@ RECURSION_LIMIT = 12
 REFUSAL = 'I can only help with football.'
 NOT_FOUND = "I couldn't find that."
 
-def guardrail_node(state: MessagesState):
+def input_guardrail_node(state: MessagesState):
     """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
     question = state['messages'][-1].content
     decision = check_question(question)
@@ -25,8 +25,8 @@ def guardrail_node(state: MessagesState):
     return {}
 
 
-def route_after_guardrail(state: MessagesState):
-    """Go to END if the guardrail added a refusal, otherwise to the model."""
+def route_after_input_guardrail(state: MessagesState):
+    """Go to END if the input guardrail added a refusal, otherwise to the model."""
     last_message = state['messages'][-1]
     if isinstance(last_message, AIMessage):
         return END
@@ -68,13 +68,13 @@ def build_graph(llm, tools, system_prompt):
     builder = StateGraph(MessagesState)
     builder.add_node('model', call_model)
     builder.add_node('tools', ToolNode(tools))
-    builder.add_node('guardrail', guardrail_node)
+    builder.add_node('input_guardrail', input_guardrail_node)
     builder.add_node('output_guardrail', output_guardrail_node)
 
-    builder.add_edge(START, 'guardrail')
+    builder.add_edge(START, 'input_guardrail')
     builder.add_conditional_edges('model', tools_condition, {'tools': 'tools', END: 'output_guardrail'})
     builder.add_edge('tools', 'model')
-    builder.add_conditional_edges('guardrail', route_after_guardrail, ['model', END])
+    builder.add_conditional_edges('input_guardrail', route_after_input_guardrail, ['model', END])
     builder.add_edge('output_guardrail', END)
 
     graph = builder.compile()
