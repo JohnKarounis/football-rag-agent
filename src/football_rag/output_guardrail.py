@@ -18,3 +18,9 @@ output_guardrail_prompt = ChatPromptTemplate.from_messages([
 ])
 
 output_guardrail_chain = output_guardrail_prompt | get_llm().with_structured_output(GroundedDecision)
+
+
+def check_answer(question, context, answer):
+    """Return the output guardrail's decision on whether the answer is supported by the context."""
+    decision = output_guardrail_chain.invoke({'question': question, 'context': context, 'answer': answer})
+    return decision
