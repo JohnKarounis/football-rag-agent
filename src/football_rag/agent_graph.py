@@ -10,6 +10,7 @@ from football_rag.llm import get_llm, count_tokens
 from football_rag.prompts import SYSTEM
 from football_rag.tools import agent_tools
 from football_rag.input_guardrail import check_question
+from football_rag.output_guardrail import check_answer
 
 RECURSION_LIMIT = 12
 REFUSAL = 'I can only help with football.'
@@ -40,6 +41,18 @@ def collect_tool_context(messages):
             results.append(message.content)
     context = '\n\n'.join(results)
     return context
+
+
+def output_guardrail_node(state: MessagesState):
+    question = state['messages'][0].content
+    answer = state['messages'][-1].content
+    if answer == REFUSAL or answer == NOT_FOUND:
+        return {}
+    context = collect_tool_context(state['messages'])
+    decision = check_answer(question, context, answer)
+    if not decision.grounded:
+        return {'messages': [AIMessage(content=NOT_FOUND)]}
+    return {}
 
 
 def build_graph(llm, tools, system_prompt):
