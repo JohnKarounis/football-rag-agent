@@ -1,6 +1,6 @@
 """LangGraph tool-calling agent."""
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.callbacks import get_usage_metadata_callback
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -13,6 +13,7 @@ from football_rag.input_guardrail import check_question
 
 RECURSION_LIMIT = 12
 REFUSAL = 'I can only help with football.'
+NOT_FOUND = "I couldn't find that."
 
 def guardrail_node(state: MessagesState):
     """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
@@ -29,6 +30,16 @@ def route_after_guardrail(state: MessagesState):
     if isinstance(last_message, AIMessage):
         return END
     return 'model'
+
+
+def collect_tool_context(messages):
+    """Join the content of every tool result in the messages into one context string."""
+    results = []
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            results.append(message.content)
+    context = '\n\n'.join(results)
+    return context
 
 
 def build_graph(llm, tools, system_prompt):
