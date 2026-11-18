@@ -61,8 +61,8 @@ def evaluate_agent(agent_func, eval_set):
     return metrics, results
 
 
-def evaluate_guardrail(eval_set):
-    """Check the guardrail's decision on each question against its label."""
+def evaluate_input_guardrail(eval_set):
+    """Check the input guardrail's decision on each question against its label."""
     results = []
     for item in eval_set:
         question = item['question']
@@ -89,10 +89,10 @@ def evaluate_guardrail(eval_set):
 if __name__ == '__main__':
     tuning_set = load_eval_set('hand_written') + load_eval_set('tuning')
     held_out = load_eval_set('held_out')
-    guardrail_set = load_eval_set('guardrail')
+    input_guardrail_set = load_eval_set('input_guardrail')
 
-    guardrail_metrics, _ = evaluate_guardrail(guardrail_set)
-    print('Guardrail:', guardrail_metrics)
+    input_guardrail_metrics, _ = evaluate_input_guardrail(input_guardrail_set)
+    print('Input Guardrail:', input_guardrail_metrics)
 
     agents = {'RAG chain': run_chain, 'Agent loop': run_agent, 'LangGraph agent': run_graph, 'CRAG': run_crag}
     for name, agent_func in agents.items():
