@@ -6,7 +6,7 @@ A portfolio-quality AI engineering project: question answering over football kno
 2. **Agent** (model controls retrieval via tools): hand-written loop, then LangGraph.
 3. **Corrective RAG (CRAG)** (graph-controlled workflow with chunk grading + web fallback), compared against the agent.
 
-The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Phase 5 — production — is in progress: FastAPI, input and output guardrails, latency/token tracking and CI are done; next are Docker, then tracing (Langfuse self-hosted as the default, LangSmith optional via env vars).
+The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Phase 5 — production — is in progress: FastAPI, input and output guardrails, latency/token tracking, CI and Docker are done; next is tracing (Langfuse self-hosted as the default, LangSmith optional via env vars).
 
 Everything runs locally and free. No paid APIs.
 
@@ -16,6 +16,7 @@ Everything runs locally and free. No paid APIs.
   - Embeddings: `text-embedding-nomic-embed-text-v1.5`. Requires prefixes `search_document: ` (indexing) and `search_query: ` (queries); handled by `NomicEmbeddings` in `embeddings.py`
 - **Frameworks:** LangChain (LCEL, `ChatOpenAI`, `@tool`), LangGraph, Chroma (persisted in `chroma_db/`, cosine, not committed)
 - **Environment:** Windows, conda env `ml` (Python 3.11), VS Code. John runs commands in cmd (Anaconda Prompt), so give cmd syntax, not bash.
+- **Docker:** Docker Desktop (per-user install, WSL 2) must be open to use `docker`. API image via `Dockerfile`; `docker compose up --build` runs it (image `football-rag-agent-api`, container `football-rag-agent-api-1`), and LM Studio must be running on the host.
 - **Package:** src layout, `pyproject.toml` with pinned deps, installed with `pip install -e .`. Extras: `experiments` (rank-bm25, sentence-transformers), `dev` (pytest, ruff, ipykernel).
 
 ## Repo layout
@@ -23,13 +24,16 @@ Everything runs locally and free. No paid APIs.
 data/corpus/      5 Wikipedia articles (.txt)
 data/eval/        hand_written.json (18), tuning.json (30), held_out.json (11), input_guardrail.json (20: question, allowed), output_guardrail.json (16: question, context, answer, grounded)
 notebooks/        01_retrieval_experiments.ipynb (numpy RAG baseline + retrieval experiments; imports from football_rag)
+Dockerfile        python:3.11-slim, WORKDIR /app, COPY pyproject.toml README.md LICENSE ./ + src/ + data/, pip install --no-cache-dir -e . (editable so config.ROOT = /app), EXPOSE 8000, CMD python -m uvicorn ... --host 0.0.0.0 --port 8000
+.dockerignore     .git, chroma_db, build, **/*.egg-info, **/__pycache__, caches, notebooks, tests, scripts, .env, .vscode (nested patterns need **/)
+docker-compose.yml  service api: build ., ports 8000:8000, LMSTUDIO_URL=http://host.docker.internal:1234/v1, volume ./chroma_db:/app/chroma_db
 .github/workflows/tests.yml  CI: on push + pull_request, ubuntu-latest, checkout@v4, setup-python@v5 (3.11), pip install -e ".[dev]", python -m pytest
 scripts/          fetch_corpus.py (re-downloads the 5 articles; overwrites data/corpus — don't run casually)
 tests/            test_ingest.py (headings, years, breadcrumbs, 565 chunks), test_eval_data.py (sizes, keys, phrases in corpus, no held-out overlap, input and output guardrail set formats), test_api.py (health, ask with fake run_graph_with_usage via monkeypatch incl. token fields, 422 on empty/too-long), test_agent_graph.py (route_after_input_guardrail: allowed → model, refusal → END, refusal text typed by user → model; collect_tool_context keeps only ToolMessage contents, joined with blank lines); 19 tests, no LM Studio needed (test_api imports agent_graph, which loads the local chroma_db)
 src/football_rag/
   api/main.py     FastAPI app: POST /v1/ask (run_graph_with_usage, latency_ms, one log line per request with question length, latency and tokens in/out), GET /health; run with `python -m uvicorn football_rag.api.main:app --reload`
   api/schemas.py  AskRequest (question, 1..MAX_QUESTION_CHARS=500), AskResponse (answer, latency_ms, input_tokens, output_tokens)
-  config.py       paths (ROOT, CORPUS_DIR, EVAL_DIR, CHROMA_DIR), models, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
+  config.py       paths (ROOT, CORPUS_DIR, EVAL_DIR, CHROMA_DIR), LMSTUDIO_URL = os.environ.get('LMSTUDIO_URL', localhost default), models, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
   embeddings.py   NomicEmbeddings, get_embeddings()
   ingest.py       load_docs, split_docs, add_breadcrumbs, build_store, load_store; __main__ rebuilds the index
   tools.py        search_football_docs, search_wikipedia, agent_tools
@@ -43,7 +47,7 @@ src/football_rag/
   crag_graph.py   CRAGState, GradeChunk, chains, nodes, build_crag_graph, run_crag
   evaluate.py     load_eval_set, evaluate_agent (judge rate + avg latency/input/output tokens; timer and usage callback wrap only the agent call, not the judge), evaluate_input_guardrail, evaluate_output_guardrail; __main__ scores both guardrails, then the chain and all three agents
 ```
-Run with `python -m football_rag.ingest`, `python -m football_rag.evaluate`, `python -m uvicorn football_rag.api.main:app --reload` and `python -m pytest` (Device Guard blocks `.exe` launchers like `pytest.exe` and `uvicorn.exe` on John's machine, so always use `python -m`). Run `python -m pytest` before every code commit. Teaching mode for new topics (e.g. the API): explain the concept and give a skeleton/step list, let John write the code, then review — don't hand over full code unless asked.
+Run with `python -m football_rag.ingest`, `python -m football_rag.evaluate`, `python -m uvicorn football_rag.api.main:app --reload`, `docker compose up --build` and `python -m pytest` (Device Guard blocks `.exe` launchers like `pytest.exe` and `uvicorn.exe` on John's machine, so always use `python -m`). Run `python -m pytest` before every code commit. Teaching mode for new topics (e.g. the API): explain the concept and give a skeleton/step list, let John write the code, then review — don't hand over full code unless asked.
 
 ## Data / corpus
 - 5 Wikipedia articles fetched via the MediaWiki API (`prop=extracts`, `explaintext=1`): 2022 FIFA World Cup, UEFA Euro 2024, FIFA World Cup, Premier League, Offside (association football).
@@ -111,9 +115,10 @@ From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): 
 6. Done: `feat/observability` — `run_graph_with_usage` + `count_tokens`, token fields in `/v1/ask` and its log line, latency/tokens per question in `evaluate_agent`.
 7. Done: `feat/output-guardrail` — OUTPUT_GUARDRAIL_SYSTEM, output_guardrail.py, NOT_FOUND + collect_tool_context + output_guardrail_node wired via the tools_condition path map, renames to input_guardrail_* (node, router, eval set, evaluate function), output_guardrail.json + evaluate_output_guardrail, tests. Later option: a config flag to switch the output check off for latency.
 8. Done: `feat/ci` — GitHub Actions workflow running pytest on every push/PR, README badge. Tests pass on a fresh machine without chroma_db or LM Studio (Chroma creates an empty collection; nothing calls the model or store at import).
-9. **Phase 5 (rest):** Docker (API container; LM Studio stays on the host via host.docker.internal, so make LMSTUDIO_URL an env var); Langfuse self-hosted with Docker Compose (LangChain callback handler); LangSmith optional (env vars only, sends data to their cloud); caching (optional).
+9. Done: `feat/docker` — LMSTUDIO_URL env var in config.py, Dockerfile + .dockerignore, docker-compose.yml. Tested live: /health ok, /v1/ask from the container answered correctly (7.2 s, 4,157/217 tokens). Later options: non-root user, healthcheck.
+10. **Phase 5 (rest):** Langfuse self-hosted with Docker Compose (LangChain callback handler); LangSmith optional (env vars only, sends data to their cloud); caching (optional).
 
-**Evaluation tools considered:** Ragas (faithfulness, answer relevancy, context precision/recall) as a separate experiment notebook comparing it with our judge and output guardrail, after CI/Docker; DeepEval skipped (pytest-style LLM tests would need an LLM in CI).
+**Evaluation tools considered:** Ragas (faithfulness, answer relevancy, context precision/recall) as a separate experiment notebook comparing it with our judge and output guardrail, after tracing; DeepEval skipped (pytest-style LLM tests would need an LLM in CI).
 
 **Later / optional:** `grader_chain.batch(...)` to parallelise CRAG grading; small fine-tuned grader or guardrail classifier; table-aware ingestion; conversation memory; supervisor + SQL stats agent.
 

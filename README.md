@@ -4,9 +4,9 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking and CI are done; next are Docker and tracing (Langfuse self-hosted, LangSmith optional).
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI and Docker are done; next is tracing (Langfuse self-hosted, LangSmith optional).
 
-**Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph
+**Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker
 
 ## Results
 
@@ -85,6 +85,8 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 - `GET /health`: liveness check
 - Interactive docs at `/docs`. Each request is logged with the question length, latency and token counts; the LLM client has a 50-second timeout.
 
+**Docker:** the API runs in a container (`Dockerfile`: `python:3.11-slim`, editable install, uvicorn on `0.0.0.0:8000`). LM Studio stays on the host: `config.py` reads `LMSTUDIO_URL` from the environment (default `http://localhost:1234/v1`), and `docker-compose.yml` sets it to `http://host.docker.internal:1234/v1`. The Chroma index isn't baked into the image; Compose mounts the local `chroma_db/` into the container.
+
 ## Project layout
 
 ```
@@ -97,11 +99,13 @@ scripts/
   fetch_corpus.py  re-download the Wikipedia corpus
 tests/          unit tests for ingestion, the eval sets, the API, the guardrail router and tool-context collection
 .github/workflows/tests.yml  CI: runs the tests on every push and pull request
+Dockerfile      API image
+docker-compose.yml  runs the API container: port 8000, LMSTUDIO_URL, chroma_db volume
 src/football_rag/
   api/
     main.py     FastAPI app: /v1/ask and /health
     schemas.py  request and response models
-  config.py     paths, models, chunking and retrieval settings
+  config.py     paths, models, chunking and retrieval settings (LMSTUDIO_URL overridable by env var)
   embeddings.py nomic embeddings with document/query prefixes
   ingest.py     build and load the Chroma index
   tools.py      retrieval and Wikipedia tools
@@ -135,6 +139,11 @@ src/football_rag/
    ```
    python -m uvicorn football_rag.api.main:app --reload
    ```
+   Or run it in Docker (needs [Docker Desktop](https://www.docker.com/products/docker-desktop/) and the index from step 3; LM Studio stays on the host):
+   ```
+   docker compose up --build
+   ```
+   Then open http://localhost:8000/docs; stop it with Ctrl+C.
 6. Run the evaluation:
    ```
    python -m football_rag.evaluate

@@ -1,0 +1,9 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      LMSTUDIO_URL: http://host.docker.internal:1234/v1
+    volumes:
+      - ./chroma_db:/app/chroma_db
