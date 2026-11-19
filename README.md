@@ -1,8 +1,10 @@
 # Football RAG Agent
 
+[![tests](https://github.com/JohnKarounis/football-rag-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/JohnKarounis/football-rag-agent/actions/workflows/tests.yml)
+
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, and per-request latency/token tracking are done; next are tracing, Docker and CI.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking and CI are done; next are Docker and tracing (Langfuse self-hosted, LangSmith optional).
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph
 
@@ -94,6 +96,7 @@ notebooks/
 scripts/
   fetch_corpus.py  re-download the Wikipedia corpus
 tests/          unit tests for ingestion, the eval sets, the API, the guardrail router and tool-context collection
+.github/workflows/tests.yml  CI: runs the tests on every push and pull request
 src/football_rag/
   api/
     main.py     FastAPI app: /v1/ask and /health
@@ -140,6 +143,7 @@ src/football_rag/
    ```
    python -m pytest
    ```
+   GitHub Actions runs the same tests on every push and pull request (Ubuntu, Python 3.11). They need neither LM Studio nor a built index: the API tests use a fake agent, and nothing calls the model or searches the store at import time.
 
 The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.py` re-downloads it from Wikipedia, but it overwrites the committed articles and the current text may no longer match the eval phrases.
 
