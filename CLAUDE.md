@@ -6,7 +6,7 @@ A portfolio-quality AI engineering project: question answering over football kno
 2. **Agent** (model controls retrieval via tools): hand-written loop, then LangGraph.
 3. **Corrective RAG (CRAG)** (graph-controlled workflow with chunk grading + web fallback), compared against the agent.
 
-The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Phase 5 — production — is in progress: FastAPI, input and output guardrails, and latency/token tracking are done; next are LangSmith tracing, Docker and CI.
+The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Phase 5 — production — is in progress: FastAPI, input and output guardrails, latency/token tracking and CI are done; next are Docker, then tracing (Langfuse self-hosted as the default, LangSmith optional via env vars).
 
 Everything runs locally and free. No paid APIs.
 
@@ -23,6 +23,7 @@ Everything runs locally and free. No paid APIs.
 data/corpus/      5 Wikipedia articles (.txt)
 data/eval/        hand_written.json (18), tuning.json (30), held_out.json (11), input_guardrail.json (20: question, allowed), output_guardrail.json (16: question, context, answer, grounded)
 notebooks/        01_retrieval_experiments.ipynb (numpy RAG baseline + retrieval experiments; imports from football_rag)
+.github/workflows/tests.yml  CI: on push + pull_request, ubuntu-latest, checkout@v4, setup-python@v5 (3.11), pip install -e ".[dev]", python -m pytest
 scripts/          fetch_corpus.py (re-downloads the 5 articles; overwrites data/corpus — don't run casually)
 tests/            test_ingest.py (headings, years, breadcrumbs, 565 chunks), test_eval_data.py (sizes, keys, phrases in corpus, no held-out overlap, input and output guardrail set formats), test_api.py (health, ask with fake run_graph_with_usage via monkeypatch incl. token fields, 422 on empty/too-long), test_agent_graph.py (route_after_input_guardrail: allowed → model, refusal → END, refusal text typed by user → model; collect_tool_context keeps only ToolMessage contents, joined with blank lines); 19 tests, no LM Studio needed (test_api imports agent_graph, which loads the local chroma_db)
 src/football_rag/
@@ -109,7 +110,10 @@ From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): 
 5. Done: `feat/guardrail` — input guardrail node, guardrail eval set + `evaluate_guardrail`, router tests. Later: held-out guardrail set.
 6. Done: `feat/observability` — `run_graph_with_usage` + `count_tokens`, token fields in `/v1/ask` and its log line, latency/tokens per question in `evaluate_agent`.
 7. Done: `feat/output-guardrail` — OUTPUT_GUARDRAIL_SYSTEM, output_guardrail.py, NOT_FOUND + collect_tool_context + output_guardrail_node wired via the tools_condition path map, renames to input_guardrail_* (node, router, eval set, evaluate function), output_guardrail.json + evaluate_output_guardrail, tests. Later option: a config flag to switch the output check off for latency.
-8. **Phase 5 (rest):** LangSmith tracing; caching; Docker; GitHub Actions CI running `python -m pytest` on every push/PR.
+8. Done: `feat/ci` — GitHub Actions workflow running pytest on every push/PR, README badge. Tests pass on a fresh machine without chroma_db or LM Studio (Chroma creates an empty collection; nothing calls the model or store at import).
+9. **Phase 5 (rest):** Docker (API container; LM Studio stays on the host via host.docker.internal, so make LMSTUDIO_URL an env var); Langfuse self-hosted with Docker Compose (LangChain callback handler); LangSmith optional (env vars only, sends data to their cloud); caching (optional).
+
+**Evaluation tools considered:** Ragas (faithfulness, answer relevancy, context precision/recall) as a separate experiment notebook comparing it with our judge and output guardrail, after CI/Docker; DeepEval skipped (pytest-style LLM tests would need an LLM in CI).
 
 **Later / optional:** `grader_chain.batch(...)` to parallelise CRAG grading; small fine-tuned grader or guardrail classifier; table-aware ingestion; conversation memory; supervisor + SQL stats agent.
 
