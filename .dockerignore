@@ -1,0 +1,13 @@
+.git
+chroma_db
+build
+**/*.egg-info
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.ipynb_checkpoints
+notebooks
+tests
+scripts
+.env
+.vscode
