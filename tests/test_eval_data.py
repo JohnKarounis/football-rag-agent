@@ -62,10 +62,19 @@ def test_held_out_does_not_overlap_tuning():
         assert item['question'] not in tuning_questions
 
 
-def test_guardrail_has_question_and_allowed():
-    """Every guardrail item has exactly question and allowed, and allowed is a bool."""
-    guardrail = load_eval_set('guardrail')
-    for item in guardrail:
+def test_input_guardrail_has_question_and_allowed():
+    """Every input guardrail item has exactly question and allowed, and allowed is a bool."""
+    input_guardrail = load_eval_set('input_guardrail')
+    for item in input_guardrail:
         assert set(item) == {'question', 'allowed'}
         assert isinstance(item['allowed'], bool)
-    assert len(guardrail) == 20
+    assert len(input_guardrail) == 20
+
+
+def test_output_guardrail_has_required_keys():
+    """Every output guardrail item has exactly question, context, answer, and grounded; grounded is a bool."""
+    output_guardrail = load_eval_set('output_guardrail')
+    for item in output_guardrail:
+        assert set(item) == {'question', 'context', 'answer', 'grounded'}
+        assert isinstance(item['grounded'], bool)
+    assert len(output_guardrail) == 16

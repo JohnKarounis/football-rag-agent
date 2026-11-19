@@ -1,6 +1,6 @@
 """LangGraph tool-calling agent."""
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.callbacks import get_usage_metadata_callback
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -10,11 +10,13 @@ from football_rag.llm import get_llm, count_tokens
 from football_rag.prompts import SYSTEM
 from football_rag.tools import agent_tools
 from football_rag.input_guardrail import check_question
+from football_rag.output_guardrail import check_answer
 
 RECURSION_LIMIT = 12
 REFUSAL = 'I can only help with football.'
+NOT_FOUND = "I couldn't find that."
 
-def guardrail_node(state: MessagesState):
+def input_guardrail_node(state: MessagesState):
     """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
     question = state['messages'][-1].content
     decision = check_question(question)
@@ -23,12 +25,34 @@ def guardrail_node(state: MessagesState):
     return {}
 
 
-def route_after_guardrail(state: MessagesState):
-    """Go to END if the guardrail added a refusal, otherwise to the model."""
+def route_after_input_guardrail(state: MessagesState):
+    """Go to END if the input guardrail added a refusal, otherwise to the model."""
     last_message = state['messages'][-1]
     if isinstance(last_message, AIMessage):
         return END
     return 'model'
+
+
+def collect_tool_context(messages):
+    """Join the content of every tool result in the messages into one context string."""
+    results = []
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            results.append(message.content)
+    context = '\n\n'.join(results)
+    return context
+
+
+def output_guardrail_node(state: MessagesState):
+    question = state['messages'][0].content
+    answer = state['messages'][-1].content
+    if answer == REFUSAL or answer == NOT_FOUND:
+        return {}
+    context = collect_tool_context(state['messages'])
+    decision = check_answer(question, context, answer)
+    if not decision.grounded:
+        return {'messages': [AIMessage(content=NOT_FOUND)]}
+    return {}
 
 
 def build_graph(llm, tools, system_prompt):
@@ -44,12 +68,14 @@ def build_graph(llm, tools, system_prompt):
     builder = StateGraph(MessagesState)
     builder.add_node('model', call_model)
     builder.add_node('tools', ToolNode(tools))
-    builder.add_node('guardrail', guardrail_node)
+    builder.add_node('input_guardrail', input_guardrail_node)
+    builder.add_node('output_guardrail', output_guardrail_node)
 
-    builder.add_edge(START, 'guardrail')
-    builder.add_conditional_edges('model', tools_condition)
+    builder.add_edge(START, 'input_guardrail')
+    builder.add_conditional_edges('model', tools_condition, {'tools': 'tools', END: 'output_guardrail'})
     builder.add_edge('tools', 'model')
-    builder.add_conditional_edges('guardrail', route_after_guardrail, ['model', END])
+    builder.add_conditional_edges('input_guardrail', route_after_input_guardrail, ['model', END])
+    builder.add_edge('output_guardrail', END)
 
     graph = builder.compile()
     return graph

@@ -15,6 +15,7 @@ from football_rag.agent_graph import run_graph
 from football_rag.crag_graph import run_crag
 from football_rag.rag_chain import run_chain
 from football_rag.input_guardrail import check_question
+from football_rag.output_guardrail import check_answer
 
 judge_prompt = ChatPromptTemplate.from_messages([
     ('system', JUDGE_SYSTEM),
@@ -61,8 +62,8 @@ def evaluate_agent(agent_func, eval_set):
     return metrics, results
 
 
-def evaluate_guardrail(eval_set):
-    """Check the guardrail's decision on each question against its label."""
+def evaluate_input_guardrail(eval_set):
+    """Check the input guardrail's decision on each question against its label."""
     results = []
     for item in eval_set:
         question = item['question']
@@ -86,13 +87,45 @@ def evaluate_guardrail(eval_set):
     return metrics, results
 
 
+def evaluate_output_guardrail(eval_set):
+    """Check the output guardrail's decision on each answer against its label."""
+    results = []
+    for item in eval_set:
+        question = item['question']
+        context = item['context']
+        answer = item['answer']
+        decision = check_answer(question, context, answer)
+        expected = item['grounded']
+        predicted = decision.grounded
+        reason = decision.reason
+        correct = expected == predicted
+        results.append({'Question': question, 'Answer': answer, 'Expected': expected, 'Predicted': predicted, 'Correct': correct, 'Reason': reason})
+
+    num_correct = sum([r['Correct'] for r in results])
+    accuracy = num_correct / len(results)
+    false_rejects = 0
+    missed_hallucinations = 0
+    for result in results:
+        if result['Expected'] and not result['Predicted']:
+            false_rejects += 1 
+        if not result['Expected'] and result['Predicted']:
+            missed_hallucinations += 1
+
+    metrics = {'Accuracy': accuracy, 'False Rejects': false_rejects, 'Missed Hallucinations': missed_hallucinations}
+    return metrics, results
+
+
 if __name__ == '__main__':
     tuning_set = load_eval_set('hand_written') + load_eval_set('tuning')
     held_out = load_eval_set('held_out')
-    guardrail_set = load_eval_set('guardrail')
+    input_guardrail_set = load_eval_set('input_guardrail')
+    output_guardrail_set = load_eval_set('output_guardrail')
 
-    guardrail_metrics, _ = evaluate_guardrail(guardrail_set)
-    print('Guardrail:', guardrail_metrics)
+    input_guardrail_metrics, _ = evaluate_input_guardrail(input_guardrail_set)
+    print('Input Guardrail:', input_guardrail_metrics)
+
+    output_guardrail_metrics, _ = evaluate_output_guardrail(output_guardrail_set)
+    print('Output guardrail:', output_guardrail_metrics)
 
     agents = {'RAG chain': run_chain, 'Agent loop': run_agent, 'LangGraph agent': run_graph, 'CRAG': run_crag}
     for name, agent_func in agents.items():
