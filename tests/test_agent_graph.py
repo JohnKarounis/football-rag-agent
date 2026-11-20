@@ -1,8 +1,10 @@
 """Unit tests for the agent graph's routing and helpers."""
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 
-from football_rag.agent_graph import route_after_input_guardrail, collect_tool_context, REFUSAL
+from football_rag import agent_graph
+from football_rag.agent_graph import route_after_input_guardrail, collect_tool_context, REFUSAL, NOT_FOUND
 
 def test_allowed_question_goes_to_model():
     """A question the guardrail allowed goes on to the agent."""
@@ -35,3 +37,16 @@ def test_collect_tool_context_joins_results():
     ]
     context = collect_tool_context(messages)
     assert context == 'chunk A\n\nchunk B'
+
+
+class FakeGraph:
+    """Stands in for the compiled graph; always hits the step limit."""
+    def invoke(self, inputs, config):
+        raise GraphRecursionError('step limit')
+    
+
+def test_step_limit_returns_not_found(monkeypatch):
+    """Hitting the step limit returns NOT_FOUND."""
+    monkeypatch.setattr(agent_graph, 'graph', FakeGraph())
+    answer = agent_graph.run_graph('Who scored the most goals ever?')
+    assert answer == NOT_FOUND
