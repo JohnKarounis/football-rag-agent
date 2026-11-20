@@ -89,7 +89,7 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 
 **Tracing** (`tracing.py`): optional, with a self-hosted [Langfuse](https://langfuse.com). `get_callbacks()` returns Langfuse's LangChain callback handler when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set, and an empty list otherwise, so tests, CI and anyone without Langfuse run unchanged. `run_graph` passes the callbacks to the graph, and every request becomes one trace: each node, LLM call (prompt, output, tokens, latency), tool call and retrieval as a tree. The keys live in a git-ignored `.env` (template: `.env.example`); uvicorn loads it with `--env-file`, Compose with `env_file`. Langfuse runs from its own Docker Compose stack outside this repo, at `http://localhost:3000` (the API container reaches it at `host.docker.internal:3000`).
 
-Tracing already paid off: a question about the all-time top scorer hit the 12-step limit, and the trace showed why: one docs search, then four Wikipedia searches (one with a player name the model added from its own knowledge), none of which returned the answer, since the corpus has no scorer table and the Wikipedia tool returns only article intros. It also shows where the tokens go: the 10 retrieved chunks (~1,300 tokens) are read twice per answer, once by the agent and once by the output guardrail.
+Tracing already paid off: a question about the all-time top scorer hit the 12-step limit, and the trace showed why: one docs search, then four Wikipedia searches (one with a player name the model added from its own knowledge), none of which returned the answer, since the corpus has no scorer table and the Wikipedia tool returns only article intros. The API used to return the technical `Stopped: reached the step limit` in that case; it now returns `I couldn't find that.`, like any other unanswerable question. It also shows where the tokens go: the 10 retrieved chunks (~1,300 tokens) are read twice per answer, once by the agent and once by the output guardrail.
 
 It also caught the output guardrail's first real block, and a weakness: "What is the offside rule?" got a long answer that stated one rule backwards (a player who was offside when the ball was played "becomes onside before receiving it" and is not penalised). The guardrail replaced it with `I couldn't find that.`, but its reason was a different, correct sentence that combined facts from two chunks, and it didn't mention the false one. The right outcome for the wrong reason, which points to two cases the guardrail set doesn't test yet: answers that combine several chunks, and rules stated in reverse.
 
@@ -105,7 +105,7 @@ notebooks/
   01_retrieval_experiments.ipynb  numpy RAG baseline and retrieval experiments
 scripts/
   fetch_corpus.py  re-download the Wikipedia corpus
-tests/          unit tests for ingestion, the eval sets, the API, the guardrail router and tool-context collection
+tests/          unit tests for ingestion, the eval sets, the API, the guardrail router, tool-context collection and the step limit
 .github/workflows/tests.yml  CI: runs the tests on every push and pull request
 Dockerfile      API image
 docker-compose.yml  runs the API container: port 8000, LMSTUDIO_URL, Langfuse URL, .env, chroma_db volume
@@ -184,7 +184,7 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 - The held-out set has no Wikipedia-only, unanswerable or out-of-scope questions yet.
 - The guardrails are only wired into the LangGraph agent (the one the API serves), and neither has a held-out set yet.
 - The output guardrail only skips its check for the exact refusal texts; when the model refuses in its own words, the check still runs (a wasted call, not a wrong answer).
-- No give-up rule: when no search returns the answer, the agent keeps searching until the 12-step limit and the API returns `Stopped: reached the step limit` instead of `I couldn't find that.`
+- No give-up rule: when no search returns the answer, the agent keeps searching until the 12-step limit (about 14 s and 17k input tokens) before returning `I couldn't find that.`
 - Coverage is much narrower than the scope the input guardrail allows: the corpus covers the World Cup, the 2022 World Cup, Euro 2024, the Premier League and offside; everything else depends on Wikipedia intros.
 - No conversation memory: every question, in the API and the chat UI, starts a fresh graph run.
 - The output guardrail can block a grounded answer that combines facts from several chunks, and can miss a rule stated in reverse (see Tracing above).
