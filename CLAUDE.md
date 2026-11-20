@@ -6,7 +6,7 @@ A portfolio-quality AI engineering project: question answering over football kno
 2. **Agent** (model controls retrieval via tools): hand-written loop, then LangGraph.
 3. **Corrective RAG (CRAG)** (graph-controlled workflow with chunk grading + web fallback), compared against the agent.
 
-The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Phase 5 — production — is in progress: FastAPI, input and output guardrails, latency/token tracking, CI, Docker and tracing (self-hosted Langfuse) are done; next is a Gradio chat UI (`feat/ui`). LangSmith stays optional.
+The original work lives in `C:\Users\User\Documents\Drills\AI_Engineering.ipynb` and has been fully migrated into this repo. Phase 5 — production — is in progress: FastAPI, input and output guardrails, latency/token tracking, CI, Docker, tracing (self-hosted Langfuse) and a Gradio chat UI are done; next are output guardrail test cases from the offside trace, then conversation memory. LangSmith dropped (same skill as Langfuse, sends data to their cloud).
 
 Everything runs locally and free. No paid APIs.
 
@@ -18,7 +18,7 @@ Everything runs locally and free. No paid APIs.
 - **Environment:** Windows, conda env `ml` (Python 3.11), VS Code. John runs commands in cmd (Anaconda Prompt), so give cmd syntax, not bash.
 - **Docker:** Docker Desktop (per-user install, WSL 2) must be open to use `docker`. API image via `Dockerfile`; `docker compose up --build` runs it (image `football-rag-agent-api`, container `football-rag-agent-api-1`), and LM Studio must be running on the host.
 - **Langfuse:** self-hosted, from its own compose in `C:\Users\projects\langfuse` (outside the repo; partial clone, the long-path checkout errors are harmless because compose only pulls images). Start with `docker compose up -d` there; UI at http://localhost:3000 (v4.83). Langfuse v4 has no public read API for traces (events_only mode), so traces can only be checked in the UI — ask John for a screenshot.
-- **Package:** src layout, `pyproject.toml` with pinned deps, installed with `pip install -e .`. Extras: `experiments` (rank-bm25, sentence-transformers), `dev` (pytest, ruff, ipykernel).
+- **Package:** src layout, `pyproject.toml` with pinned deps, installed with `pip install -e .`. Extras: `experiments` (rank-bm25, sentence-transformers), `dev` (pytest, ruff, ipykernel), `ui` (gradio==6.29.1).
 
 ## Repo layout
 ```
@@ -43,6 +43,7 @@ src/football_rag/
   prompts.py      SYSTEM, GRADER_SYSTEM, REWRITE_SYSTEM, GENERATE_SYSTEM, JUDGE_SYSTEM, RAG_SYSTEM, INPUT_GUARDRAIL_SYSTEM, OUTPUT_GUARDRAIL_SYSTEM
   input_guardrail.py  GuardrailDecision (allowed, reason), input_guardrail_chain (structured output), check_question
   output_guardrail.py GroundedDecision (grounded, reason), output_guardrail_chain (structured output; human message has Question/Context/Answer), check_answer(question, context, answer)
+  gradio_ui.py    respond(message, history) → requests.post(f'{API_URL}/v1/ask', timeout=REQUEST_TIMEOUT=120), raise_for_status, returns answer (history unused, no memory); gr.Chatbot (height 550, placeholder, copy button) + gr.ChatInterface (title, description incl. "no conversation memory", 3 examples); launch(theme=gr.themes.Soft(primary_hue='green')); API_URL env var, default http://127.0.0.1:8000; UI on 7860
   tracing.py      get_callbacks(): [langfuse.langchain.CallbackHandler()] if LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are set, else []
   llm.py          get_llm() (temperature 0, LLM_TIMEOUT = 50 s), count_tokens(usage_callback) (sums input/output tokens over usage_callback.usage_metadata, which is keyed by model name)
   rag_chain.py    rag_chain, run_chain (retrieve once → answer; no tools, no scope rule)
@@ -51,7 +52,7 @@ src/football_rag/
   crag_graph.py   CRAGState, GradeChunk, chains, nodes, build_crag_graph, run_crag
   evaluate.py     load_eval_set, evaluate_agent (judge rate + avg latency/input/output tokens; timer and usage callback wrap only the agent call, not the judge), evaluate_input_guardrail, evaluate_output_guardrail; __main__ scores both guardrails, then the chain and all three agents
 ```
-Run with `python -m football_rag.ingest`, `python -m football_rag.evaluate`, `python -m uvicorn football_rag.api.main:app --reload --env-file .env` (drop `--env-file` to run without tracing), `docker compose up --build` and `python -m pytest` (Device Guard blocks `.exe` launchers like `pytest.exe` and `uvicorn.exe` on John's machine, so always use `python -m`). Run `python -m pytest` before every code commit. Teaching mode for new topics (e.g. the API): explain the concept and give a skeleton/step list, let John write the code, then review — don't hand over full code unless asked.
+Run with `python -m football_rag.ingest`, `python -m football_rag.evaluate`, `python -m uvicorn football_rag.api.main:app --reload --env-file .env` (drop `--env-file` to run without tracing), `docker compose up --build`, `python -m football_rag.gradio_ui` (needs the API running) and `python -m pytest` (Device Guard blocks `.exe` launchers like `pytest.exe` and `uvicorn.exe` on John's machine, so always use `python -m`). Run `python -m pytest` before every code commit. Teaching mode for new topics (e.g. the API): explain the concept and give a skeleton/step list, let John write the code, then review — don't hand over full code unless asked.
 
 ## Data / corpus
 - 5 Wikipedia articles fetched via the MediaWiki API (`prop=extracts`, `explaintext=1`): 2022 FIFA World Cup, UEFA Euro 2024, FIFA World Cup, Premier League, Offside (association football).
@@ -109,6 +110,7 @@ From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): 
 - The guardrails are only in the LangGraph agent, not in `run_agent` or `run_crag`; neither has a held-out set.
 - The output guardrail's skip only matches the exact refusal texts, so model refusals in its own words still get checked.
 - **Step-limit loop (found with Langfuse, 2026-11-20):** "Who is the highest goal scorer in the history of football (official matches only)?" → docs search (World Cup records), 3–4 Wikipedia searches (one query leaked "Josef Bican" from the model's own knowledge), then `GraphRecursionError` at 12 steps → API returns "Stopped: reached the step limit" (13.6 s, 17.7k input tokens), output guardrail skipped. Causes: no all-time scorer list in the corpus, Wikipedia tool returns intros only, no give-up rule. Later options: return NOT_FOUND on the recursion error; prompt rule to stop after N failed searches (touches SYSTEM → re-run evals).
+- **Output guardrail, right verdict for the wrong reason (found with Langfuse, 2026-11-20):** "What is the offside rule?" (clicked as a UI example) → long Markdown answer → `grounded: false` → NOT_FOUND. Reason given: the three offence conditions (interfere with play / with an opponent / gain an advantage) are only in the offside-trap chunk, so stating them as the general rule is "not fully supported" — too strict; the answer just combined two chunks. It missed the sentence that really is wrong: "a player who was offside when the ball was played but becomes onside before receiving it is not penalised" (contradicts the chunk and the Laws). "What's the offside rule?" typed passed (slightly different answer). Next: add two items to `output_guardrail.json` from this trace (multi-chunk synthesis → grounded; reversed rule → not grounded) and re-run `evaluate_output_guardrail`, in its own branch.
 - Token counts come from LangChain's usage callback, so `run_agent` (raw OpenAI client) reports 0; it would need `response.usage` read in the loop.
 
 ## Roadmap
@@ -122,8 +124,10 @@ From `notebooks/01_retrieval_experiments.ipynb` (tuning set, hit@3/5/10 + MRR): 
 8. Done: `feat/ci` — GitHub Actions workflow running pytest on every push/PR, README badge. Tests pass on a fresh machine without chroma_db or LM Studio (Chroma creates an empty collection; nothing calls the model or store at import).
 9. Done: `feat/docker` — LMSTUDIO_URL env var in config.py, Dockerfile + .dockerignore, docker-compose.yml. Tested live: /health ok, /v1/ask from the container answered correctly (7.2 s, 4,157/217 tokens). Later options: non-root user, healthcheck.
 10. Done: `feat/tracing` — `langfuse==5.2.0` + `python-dotenv==1.2.4` (for `uvicorn --env-file`; `ml` also needed `opentelemetry-exporter-otlp-proto-grpc==1.45.2` to fix a chromadb pin warning), `tracing.py`, callbacks in `run_graph`, compose `env_file` + Langfuse URL override, `.env.example`. Tested live locally and from the container: traces show the full tree (input_guardrail → model → tools/search → model → output_guardrail). Findings: the step-limit loop (Known issues); the 10 chunks (~1.3k tokens) are read twice per answer (agent + output guardrail); per-LLM-call latency ~0.8–1.3 s regardless of input size. Later options: a test for `get_callbacks`; lower TOP_K experiment.
-11. **Next: `feat/ui`** — Gradio `ChatInterface` as a separate client calling `POST /v1/ask` with requests (renders the Markdown answers); possibly a second Compose service later.
-12. **Phase 5 (rest):** LangSmith optional (env vars only, sends data to their cloud); caching (optional).
+11. Done: `feat/gradio_ui` — `ui` extra, `gradio_ui.py` (ChatInterface as a separate API client, Soft green theme, custom Chatbot). Tested live: Markdown renders; follow-ups fail (no memory); contradictory answers across questions (Bican vs Ronaldo, each grounded in its own retrieval; Q4 opened with "Yes", agreeing with the user's framing); "Who won the Premier League in 2023?" works via Wikipedia (12.6k input tokens); the offside example exposed the output guardrail issue (Known issues). Later options: friendly error message in `respond` (catch `requests.RequestException`), latency/tokens line under each answer, UI as a second Compose service.
+12. **Next: `feat/guardrail-cases`** — two new `output_guardrail.json` items from the offside trace (multi-chunk synthesis → grounded; reversed rule → not grounded), test size 16 → 18, run `evaluate_output_guardrail` 2–3×; only if it fails, adjust OUTPUT_GUARDRAIL_SYSTEM and re-run the guardrail set + full agent eval.
+13. **Then: `feat/memory`** — conversation memory (LangGraph checkpointer + thread_id, or the API accepting earlier turns); eval set needs follow-up questions. Also open: step-limit fix (NOT_FOUND on recursion error, give-up rule).
+14. LangSmith dropped. Caching optional.
 
 **Evaluation tools considered:** Ragas (faithfulness, answer relevancy, context precision/recall) as a separate experiment notebook comparing it with our judge and output guardrail, after tracing; DeepEval skipped (pytest-style LLM tests would need an LLM in CI).
 
