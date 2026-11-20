@@ -11,6 +11,7 @@ from football_rag.prompts import SYSTEM
 from football_rag.tools import agent_tools
 from football_rag.input_guardrail import check_question
 from football_rag.output_guardrail import check_answer
+from football_rag.tracing import get_callbacks
 
 RECURSION_LIMIT = 12
 REFUSAL = 'I can only help with football.'
@@ -86,10 +87,11 @@ graph = build_graph(get_llm(), agent_tools, SYSTEM)
 
 def run_graph(question):
     """Run the agent graph on one question and return the final answer."""
+    callbacks = get_callbacks()
     try:
         result = graph.invoke(
             {'messages': [HumanMessage(content=question)]},
-            config={'recursion_limit': RECURSION_LIMIT}
+            config={'recursion_limit': RECURSION_LIMIT, 'callbacks': callbacks}
         )
         answer = result['messages'][-1].content
     except GraphRecursionError:
