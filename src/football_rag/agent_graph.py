@@ -95,7 +95,7 @@ def run_graph(question):
         )
         answer = result['messages'][-1].content
     except GraphRecursionError:
-        answer = "Stopped: reached the step limit"
+        answer = NOT_FOUND
     return answer
 
 
