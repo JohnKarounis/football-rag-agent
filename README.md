@@ -4,9 +4,9 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI and Docker are done; next is tracing (Langfuse self-hosted, LangSmith optional).
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker and tracing (self-hosted Langfuse) are done; next is a chat UI.
 
-**Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker
+**Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker | Langfuse
 
 ## Results
 
@@ -87,6 +87,10 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 
 **Docker:** the API runs in a container (`Dockerfile`: `python:3.11-slim`, editable install, uvicorn on `0.0.0.0:8000`). LM Studio stays on the host: `config.py` reads `LMSTUDIO_URL` from the environment (default `http://localhost:1234/v1`), and `docker-compose.yml` sets it to `http://host.docker.internal:1234/v1`. The Chroma index isn't baked into the image; Compose mounts the local `chroma_db/` into the container.
 
+**Tracing** (`tracing.py`): optional, with a self-hosted [Langfuse](https://langfuse.com). `get_callbacks()` returns Langfuse's LangChain callback handler when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set, and an empty list otherwise, so tests, CI and anyone without Langfuse run unchanged. `run_graph` passes the callbacks to the graph, and every request becomes one trace: each node, LLM call (prompt, output, tokens, latency), tool call and retrieval as a tree. The keys live in a git-ignored `.env` (template: `.env.example`); uvicorn loads it with `--env-file`, Compose with `env_file`. Langfuse runs from its own Docker Compose stack outside this repo, at `http://localhost:3000` (the API container reaches it at `host.docker.internal:3000`).
+
+Tracing already paid off: a question about the all-time top scorer hit the 12-step limit, and the trace showed why: one docs search, then four Wikipedia searches (one with a player name the model added from its own knowledge), none of which returned the answer, since the corpus has no scorer table and the Wikipedia tool returns only article intros. It also shows where the tokens go: the 10 retrieved chunks (~1,300 tokens) are read twice per answer, once by the agent and once by the output guardrail.
+
 ## Project layout
 
 ```
@@ -100,7 +104,8 @@ scripts/
 tests/          unit tests for ingestion, the eval sets, the API, the guardrail router and tool-context collection
 .github/workflows/tests.yml  CI: runs the tests on every push and pull request
 Dockerfile      API image
-docker-compose.yml  runs the API container: port 8000, LMSTUDIO_URL, chroma_db volume
+docker-compose.yml  runs the API container: port 8000, LMSTUDIO_URL, Langfuse URL, .env, chroma_db volume
+.env.example    template for the Langfuse keys (copy to .env)
 src/football_rag/
   api/
     main.py     FastAPI app: /v1/ask and /health
@@ -113,6 +118,7 @@ src/football_rag/
   input_guardrail.py  scope and injection check
   output_guardrail.py groundedness check
   llm.py        shared chat model
+  tracing.py    optional Langfuse callback handler
   rag_chain.py  LangChain RAG chain (LCEL)
   agent_loop.py hand-written agent
   agent_graph.py LangGraph agent
@@ -144,11 +150,16 @@ src/football_rag/
    docker compose up --build
    ```
    Then open http://localhost:8000/docs; stop it with Ctrl+C.
-6. Run the evaluation:
+6. Optional, tracing: start Langfuse with its own [Docker Compose setup](https://langfuse.com/self-hosting/docker-compose) (outside this repo), open http://localhost:3000, create a project and an API key pair, then copy `.env.example` to `.env` and fill in the keys. Start the API with the keys loaded:
+   ```
+   python -m uvicorn football_rag.api.main:app --reload --env-file .env
+   ```
+   `docker compose up` picks up `.env` by itself. Every question then appears as a trace in Langfuse.
+7. Run the evaluation:
    ```
    python -m football_rag.evaluate
    ```
-7. Run the tests (no LM Studio needed; the API tests replace the agent with a fake):
+8. Run the tests (no LM Studio needed; the API tests replace the agent with a fake):
    ```
    python -m pytest
    ```
@@ -164,6 +175,8 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 - The held-out set has no Wikipedia-only, unanswerable or out-of-scope questions yet.
 - The guardrails are only wired into the LangGraph agent (the one the API serves), and neither has a held-out set yet.
 - The output guardrail only skips its check for the exact refusal texts; when the model refuses in its own words, the check still runs (a wasted call, not a wrong answer).
+- No give-up rule: when no search returns the answer, the agent keeps searching until the 12-step limit and the API returns `Stopped: reached the step limit` instead of `I couldn't find that.`
+- Coverage is much narrower than the scope the input guardrail allows: the corpus covers the World Cup, the 2022 World Cup, Euro 2024, the Premier League and offside; everything else depends on Wikipedia intros.
 
 ## License
 
