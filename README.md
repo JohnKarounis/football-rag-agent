@@ -4,9 +4,9 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker and tracing (self-hosted Langfuse) are done; next is a chat UI.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker, tracing (self-hosted Langfuse) and a Gradio chat UI are done; next are new output guardrail test cases and conversation memory.
 
-**Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker | Langfuse
+**Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker | Langfuse | Gradio
 
 ## Results
 
@@ -91,6 +91,10 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 
 Tracing already paid off: a question about the all-time top scorer hit the 12-step limit, and the trace showed why: one docs search, then four Wikipedia searches (one with a player name the model added from its own knowledge), none of which returned the answer, since the corpus has no scorer table and the Wikipedia tool returns only article intros. It also shows where the tokens go: the 10 retrieved chunks (~1,300 tokens) are read twice per answer, once by the agent and once by the output guardrail.
 
+It also caught the output guardrail's first real block, and a weakness: "What is the offside rule?" got a long answer that stated one rule backwards (a player who was offside when the ball was played "becomes onside before receiving it" and is not penalised). The guardrail replaced it with `I couldn't find that.`, but its reason was a different, correct sentence that combined facts from two chunks, and it didn't mention the false one. The right outcome for the wrong reason, which points to two cases the guardrail set doesn't test yet: answers that combine several chunks, and rules stated in reverse.
+
+**Chat UI** (`gradio_ui.py`): a Gradio `ChatInterface` that renders the agent's Markdown answers. It is a separate client of the API, not part of the agent: each message is sent to `POST /v1/ask` with `requests` (URL from `API_URL`, default `http://127.0.0.1:8000`), so the flow is browser → Gradio → API → agent, the same as with any other front end. Gradio is an optional `ui` extra, so the API image and CI don't install it. Each question is answered on its own: the API has no conversation memory yet, so follow-ups like "why did you say that before?" don't work.
+
 ## Project layout
 
 ```
@@ -119,6 +123,7 @@ src/football_rag/
   output_guardrail.py groundedness check
   llm.py        shared chat model
   tracing.py    optional Langfuse callback handler
+  gradio_ui.py  Gradio chat UI that calls the API
   rag_chain.py  LangChain RAG chain (LCEL)
   agent_loop.py hand-written agent
   agent_graph.py LangGraph agent
@@ -129,9 +134,9 @@ src/football_rag/
 ## Setup
 
 1. Install [LM Studio](https://lmstudio.ai), load `qwen/qwen3.8-27b` and `text-embedding-nomic-embed-text-v1.5`, and start the server on `http://localhost:1234`.
-2. Install the package (`dev` adds pytest):
+2. Install the package (`dev` adds pytest, `ui` adds Gradio):
    ```
-   pip install -e ".[dev]"
+   pip install -e ".[dev,ui]"
    ```
 3. Build the index:
    ```
@@ -155,11 +160,15 @@ src/football_rag/
    python -m uvicorn football_rag.api.main:app --reload --env-file .env
    ```
    `docker compose up` picks up `.env` by itself. Every question then appears as a trace in Langfuse.
-7. Run the evaluation:
+7. Chat in the browser: with the API running (step 5), start the UI in a second terminal and open http://127.0.0.1:7860:
+   ```
+   python -m football_rag.gradio_ui
+   ```
+8. Run the evaluation:
    ```
    python -m football_rag.evaluate
    ```
-8. Run the tests (no LM Studio needed; the API tests replace the agent with a fake):
+9. Run the tests (no LM Studio needed; the API tests replace the agent with a fake):
    ```
    python -m pytest
    ```
@@ -177,6 +186,8 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 - The output guardrail only skips its check for the exact refusal texts; when the model refuses in its own words, the check still runs (a wasted call, not a wrong answer).
 - No give-up rule: when no search returns the answer, the agent keeps searching until the 12-step limit and the API returns `Stopped: reached the step limit` instead of `I couldn't find that.`
 - Coverage is much narrower than the scope the input guardrail allows: the corpus covers the World Cup, the 2022 World Cup, Euro 2024, the Premier League and offside; everything else depends on Wikipedia intros.
+- No conversation memory: every question, in the API and the chat UI, starts a fresh graph run.
+- The output guardrail can block a grounded answer that combines facts from several chunks, and can miss a rule stated in reverse (see Tracing above).
 
 ## License
 
