@@ -32,4 +32,4 @@ demo = gr.ChatInterface(
 
 theme = gr.themes.Soft(primary_hue='green')
 if __name__ == '__main__':
-    demo.launch(theme=theme)
+    demo.launch(theme=theme, inbrowser=True, server_name='127.0.0.1')

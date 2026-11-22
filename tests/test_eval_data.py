@@ -77,4 +77,4 @@ def test_output_guardrail_has_required_keys():
     for item in output_guardrail:
         assert set(item) == {'question', 'context', 'answer', 'grounded'}
         assert isinstance(item['grounded'], bool)
-    assert len(output_guardrail) == 16
+    assert len(output_guardrail) == 18
