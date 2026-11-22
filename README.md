@@ -41,11 +41,13 @@ The first prompt said "football" and let the Super Bowl and darts through, so it
 
 ### Output guardrail
 
-Checks that every fact in the agent's answer is supported by the tool results; an unsupported answer is replaced with `I couldn't find that.` Scored on 16 hand-made cases (`data/eval/output_guardrail.json`): a short context, an answer and a label. The 8 grounded answers paraphrase, reformat or leave facts out; the 8 ungrounded ones have a wrong score, scorer, year or date, add a fact the context doesn't contain (including true facts, like Brazil's five titles when the context doesn't mention them), or come with an injection hidden in the context.
+Checks that every fact in the agent's answer is supported by the tool results; an unsupported answer is replaced with `I couldn't find that.` Scored on 18 hand-made cases (`data/eval/output_guardrail.json`): a short context, an answer and a label. The 9 grounded answers paraphrase, reformat, leave facts out or combine facts from two chunks; the 9 ungrounded ones have a wrong score, scorer, year or date, add a fact the context doesn't contain (including true facts, like Brazil's five titles when the context doesn't mention them), come with an injection hidden in the context, or state an offside rule in reverse.
 
 | Accuracy | False rejects | Missed hallucinations |
 |---|---|---|
-| 100% | 0 | 0 |
+| 94% (17/18) | 0 | 1 |
+
+The two offside cases come from a real trace (see Tracing below). The guardrail accepts the answer that combines two chunks, but it misses the reversed rule every time: the context says offside is judged when the ball is played, "not when the player receives the ball", and the answer says a player who is onside by the time they receive it is not penalised. The guardrail's reason fills the gap with its own inference ("implying no penalty if they become onside before receiving it"). Three prompt changes (allowing synthesis, naming reversed conditions, forbidding inference) didn't move it, so the prompt stays as it was and the case stays in the set as a known miss rather than being tuned away on an 18-item set. It catches wrong names, scores, dates and invented facts; subtly reversed rules need a stronger checker model or a sentence-by-sentence check.
 
 On the agent eval it changed nothing: no correct answer was rejected (tuning stays 100%), and the agent didn't hallucinate on these sets, so there was nothing to catch. It is insurance, and it costs about 3 s and 1,700 input tokens per answered question (6.4 s vs 3.5 s, 4,926 vs 3,256 tokens), because it re-reads all the tool results. Refusals and questions the input guardrail blocks skip it.
 
@@ -91,7 +93,7 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 
 Tracing already paid off: a question about the all-time top scorer hit the 12-step limit, and the trace showed why: one docs search, then four Wikipedia searches (one with a player name the model added from its own knowledge), none of which returned the answer, since the corpus has no scorer table and the Wikipedia tool returns only article intros. The API used to return the technical `Stopped: reached the step limit` in that case; it now returns `I couldn't find that.`, like any other unanswerable question. It also shows where the tokens go: the 10 retrieved chunks (~1,300 tokens) are read twice per answer, once by the agent and once by the output guardrail.
 
-It also caught the output guardrail's first real block, and a weakness: "What is the offside rule?" got a long answer that stated one rule backwards (a player who was offside when the ball was played "becomes onside before receiving it" and is not penalised). The guardrail replaced it with `I couldn't find that.`, but its reason was a different, correct sentence that combined facts from two chunks, and it didn't mention the false one. The right outcome for the wrong reason, which points to two cases the guardrail set doesn't test yet: answers that combine several chunks, and rules stated in reverse.
+It also caught the output guardrail's first real block, and a weakness: "What is the offside rule?" got a long answer that stated one rule backwards (a player who was offside when the ball was played "becomes onside before receiving it" and is not penalised). The guardrail replaced it with `I couldn't find that.`, but its reason was a different, correct sentence that combined facts from two chunks, and it didn't mention the false one. The right outcome for the wrong reason. Both cases are now in the guardrail set (see Output guardrail above).
 
 **Chat UI** (`gradio_ui.py`): a Gradio `ChatInterface` that renders the agent's Markdown answers. It is a separate client of the API, not part of the agent: each message is sent to `POST /v1/ask` with `requests` (URL from `API_URL`, default `http://127.0.0.1:8000`), so the flow is browser → Gradio → API → agent, the same as with any other front end. Gradio is an optional `ui` extra, so the API image and CI don't install it. Each question is answered on its own: the API has no conversation memory yet, so follow-ups like "why did you say that before?" don't work.
 
@@ -100,7 +102,7 @@ It also caught the output guardrail's first real block, and a weakness: "What is
 ```
 data/
   corpus/       5 Wikipedia articles
-  eval/         hand_written (18), tuning (30), held_out (11), input_guardrail (20), output_guardrail (16)
+  eval/         hand_written (18), tuning (30), held_out (11), input_guardrail (20), output_guardrail (18)
 notebooks/
   01_retrieval_experiments.ipynb  numpy RAG baseline and retrieval experiments
 scripts/
@@ -187,7 +189,7 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 - No give-up rule: when no search returns the answer, the agent keeps searching until the 12-step limit (about 14 s and 17k input tokens) before returning `I couldn't find that.`
 - Coverage is much narrower than the scope the input guardrail allows: the corpus covers the World Cup, the 2022 World Cup, Euro 2024, the Premier League and offside; everything else depends on Wikipedia intros.
 - No conversation memory: every question, in the API and the chat UI, starts a fresh graph run.
-- The output guardrail can block a grounded answer that combines facts from several chunks, and can miss a rule stated in reverse (see Tracing above).
+- The output guardrail misses subtly reversed rules: it infers its way to "supported" even when the context contradicts the answer (1 known miss in its set; prompt changes didn't fix it).
 
 ## License
 
