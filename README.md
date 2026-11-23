@@ -4,7 +4,7 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker, tracing (self-hosted Langfuse) and a Gradio chat UI are done; next are a retry when the output guardrail rejects an answer, and conversation memory.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker, tracing (self-hosted Langfuse), a Gradio chat UI and a self-correcting retry after the output guardrail are done; next is conversation memory.
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker | Langfuse | Gradio
 
@@ -73,7 +73,7 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 
 **Input guardrail** (`input_guardrail.py`): one structured-output LLM call (`allowed` + `reason`) that blocks off-topic questions and prompt injections before they reach the agent. In the LangGraph agent it is the first node: `START → input_guardrail → model | END`. A blocked question ends the graph with `I can only help with football.`; an allowed one goes to the agent unchanged. It adds about 0.5 s per question. The agent's own prompt keeps its scope rule as a second layer.
 
-**Output guardrail** (`output_guardrail.py`): one structured-output LLM call (`grounded` + `reason`) that checks the final answer against the tool results collected from the conversation. When the model stops calling tools, the graph goes `model → output_guardrail → END` instead of ending. Ungrounded answers are replaced with `I couldn't find that.`; grounded answers and refusals pass through unchanged. An answer given without any tool call has no context, so it counts as ungrounded, which matches the agent's rule to answer only from tool results.
+**Output guardrail** (`output_guardrail.py`): one structured-output LLM call (`grounded` + `reason`) that checks the final answer against the tool results collected from the conversation. When the model stops calling tools, the graph goes `model → output_guardrail` instead of ending. Grounded answers and refusals pass through to `END` unchanged. An ungrounded answer gets **one retry**: the guardrail adds a feedback message with its reason ("Your answer is not supported by the search results. … Rewrite it using only facts from the search results, or reply exactly: 'I couldn't find that.'"), the graph routes back to the model, and the rewrite is checked again. Only if the rewrite also fails is the answer replaced with `I couldn't find that.` The retry count comes from the feedback messages already in the conversation, so the graph state stays a plain message list. An answer given without any tool call has no context, so it counts as ungrounded, which matches the agent's rule to answer only from tool results.
 
 **Agents:**
 - `agent_loop.py`: hand-written tool-calling loop on the OpenAI client
@@ -107,7 +107,7 @@ notebooks/
   01_retrieval_experiments.ipynb  numpy RAG baseline and retrieval experiments
 scripts/
   fetch_corpus.py  re-download the Wikipedia corpus
-tests/          unit tests for ingestion, the eval sets, the API, the guardrail router, tool-context collection and the step limit
+tests/          unit tests for ingestion, the eval sets, the API, both guardrail routers, tool-context collection, the retry count and the step limit
 .github/workflows/tests.yml  CI: runs the tests on every push and pull request
 Dockerfile      API image
 docker-compose.yml  runs the API container: port 8000, LMSTUDIO_URL, Langfuse URL, .env, chroma_db volume
@@ -187,7 +187,7 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 
 - Tables are dropped at ingestion, so e.g. the Premier League champions per season are missing.
 - The year metadata is a heuristic: a 2022 chunk that mentions 2026 is tagged 2026.
-- The model sometimes leaks its own knowledge into search queries, and into answers: asked for the top World Cup scorer, it answered Klose with 16 goals (true before 2026) although the retrieved text says Mbappé with 22, and the output guardrail blocked it. `SYSTEM` now says the tool results win when they disagree with what the model knows ("records and results change"). The agent then answers Mbappé with 22, and the evals are unchanged (loop and LangGraph still 100% tuning, 91% held-out), but it still adds Klose's old total of 16 as a side detail, so the guardrail still blocks the whole answer. The guardrail is all-or-nothing: one unsupported detail throws away a correct answer.
+- The model sometimes leaks its own knowledge into search queries, and into answers: asked for the top World Cup scorer, it answered Klose with 16 goals (true before 2026) although the retrieved text says Mbappé with 22, and the output guardrail blocked it. `SYSTEM` now says the tool results win when they disagree with what the model knows ("records and results change"). The agent then answers Mbappé with 22, and the evals are unchanged (loop and LangGraph still 100% tuning, 91% held-out), but it still adds Klose's old total of 16 as a side detail, which the guardrail rejects. With the retry, the trace shows the full loop: rejected for "the specific number 16", sent back with that reason, rewritten without it ("Mbappé… 22 goals… surpassed Messi and Klose"), accepted. The retry cost about 3.3 s (one model call, one guardrail check) on that question. On the full eval it changed nothing on tuning (100%, 5.9 s, apparently never triggered) and kept held-out at 91% (7.0 s vs 6.4 s, about one retry's worth of extra tokens).
 - The held-out set has no Wikipedia-only, unanswerable or out-of-scope questions yet.
 - The guardrails are only wired into the LangGraph agent (the one the API serves), and neither has a held-out set yet.
 - The output guardrail only skips its check for the exact refusal texts; when the model refuses in its own words, the check still runs (a wasted call, not a wrong answer).
