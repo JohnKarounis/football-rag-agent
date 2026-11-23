@@ -64,6 +64,10 @@ def output_guardrail_node(state: MessagesState):
     context = collect_tool_context(state['messages'])
     decision = check_answer(question, context, answer)
     if not decision.grounded:
+        retries = count_retries(state['messages'])
+        if retries < MAX_ANSWER_RETRIES:
+            feedback = f"{RETRY_FEEDBACK} {decision.reason} Rewrite it using only facts from the search results, or reply exactly: '{NOT_FOUND}'"
+            return {'messages': [HumanMessage(content=feedback)]}
         return {'messages': [AIMessage(content=NOT_FOUND)]}
     return {}
 
