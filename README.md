@@ -4,7 +4,7 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker, tracing (self-hosted Langfuse) and a Gradio chat UI are done; next are new output guardrail test cases and conversation memory.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker, tracing (self-hosted Langfuse) and a Gradio chat UI are done; next are a retry when the output guardrail rejects an answer, and conversation memory.
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker | Langfuse | Gradio
 
@@ -187,7 +187,7 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 
 - Tables are dropped at ingestion, so e.g. the Premier League champions per season are missing.
 - The year metadata is a heuristic: a 2022 chunk that mentions 2026 is tagged 2026.
-- The model sometimes leaks its own knowledge into search queries, and sometimes into answers: asked for the top World Cup scorer, it answered Klose with 16 goals (true before 2026) although the retrieved text says Mbappé with 22. The output guardrail blocked it; with "as of 2026" in the question, the agent used the context and answered correctly.
+- The model sometimes leaks its own knowledge into search queries, and into answers: asked for the top World Cup scorer, it answered Klose with 16 goals (true before 2026) although the retrieved text says Mbappé with 22, and the output guardrail blocked it. `SYSTEM` now says the tool results win when they disagree with what the model knows ("records and results change"). The agent then answers Mbappé with 22, and the evals are unchanged (loop and LangGraph still 100% tuning, 91% held-out), but it still adds Klose's old total of 16 as a side detail, so the guardrail still blocks the whole answer. The guardrail is all-or-nothing: one unsupported detail throws away a correct answer.
 - The held-out set has no Wikipedia-only, unanswerable or out-of-scope questions yet.
 - The guardrails are only wired into the LangGraph agent (the one the API serves), and neither has a held-out set yet.
 - The output guardrail only skips its check for the exact refusal texts; when the model refuses in its own words, the check still runs (a wasted call, not a wrong answer).
