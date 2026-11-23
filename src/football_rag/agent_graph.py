@@ -72,6 +72,14 @@ def output_guardrail_node(state: MessagesState):
     return {}
 
 
+def route_after_output_guardrail(state: MessagesState):
+    """Go back to the model if the output guardrail asked for a rewrite, otherwise to END."""
+    last_message = state['messages'][-1]
+    if isinstance(last_message, HumanMessage):
+        return 'model'
+    return END
+
+
 def build_graph(llm, tools, system_prompt):
     """Build a model <-> tools agent graph."""
 
@@ -92,7 +100,7 @@ def build_graph(llm, tools, system_prompt):
     builder.add_conditional_edges('model', tools_condition, {'tools': 'tools', END: 'output_guardrail'})
     builder.add_edge('tools', 'model')
     builder.add_conditional_edges('input_guardrail', route_after_input_guardrail, ['model', END])
-    builder.add_edge('output_guardrail', END)
+    builder.add_conditional_edges('output_guardrail', route_after_output_guardrail, ['model', END])
 
     graph = builder.compile()
     return graph
