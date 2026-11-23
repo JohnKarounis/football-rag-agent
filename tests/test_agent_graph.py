@@ -4,7 +4,8 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 
 from football_rag import agent_graph
-from football_rag.agent_graph import route_after_input_guardrail, collect_tool_context, REFUSAL, NOT_FOUND
+from football_rag.agent_graph import route_after_input_guardrail, route_after_output_guardrail, collect_tool_context, count_retries
+from football_rag.agent_graph import REFUSAL, NOT_FOUND, RETRY_FEEDBACK
 
 def test_allowed_question_goes_to_model():
     """A question the guardrail allowed goes on to the agent."""
@@ -50,3 +51,35 @@ def test_step_limit_returns_not_found(monkeypatch):
     monkeypatch.setattr(agent_graph, 'graph', FakeGraph())
     answer = agent_graph.run_graph('Who scored the most goals ever?')
     assert answer == NOT_FOUND
+
+
+def test_count_retries_counts_only_feedback():
+    """Only feedback messages from the output guardrail are counted, not the user's question."""
+    messages = [
+        HumanMessage(content='Who won Euro 2024?'),
+        AIMessage(content='Spain won, beating Germany.'),
+        HumanMessage(content=f'{RETRY_FEEDBACK} The final was against England.')
+    ]
+    retries = count_retries(messages)
+    assert retries == 1
+
+
+def test_feedback_goes_back_to_model():
+    """A rewrite request from the output guardrail sends the graph back to the model."""
+    state = {'messages': [
+        HumanMessage(content='Who won Euro 2024'),
+        AIMessage(content='Spain won, beating Germany.'),
+        HumanMessage(content=f'{RETRY_FEEDBACK} The final was against England.')
+    ]}
+    next_node = route_after_output_guardrail(state)
+    assert next_node == 'model'
+
+
+def test_final_answer_goes_to_end():
+    """An answer the output guardrail accepted ends the graph."""
+    state = {'messages': [
+        HumanMessage(content='Who won Euro 2024?'),
+        AIMessage(content='Spain won, beating England 2-1.')
+    ]}
+    next_node = route_after_output_guardrail(state)
+    assert next_node == END
