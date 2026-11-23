@@ -112,6 +112,7 @@ tests/          unit tests for ingestion, the eval sets, the API, the guardrail 
 Dockerfile      API image
 docker-compose.yml  runs the API container: port 8000, LMSTUDIO_URL, Langfuse URL, .env, chroma_db volume
 .env.example    template for the Langfuse keys (copy to .env)
+run.bat         starts the API and the chat UI in two windows (Windows)
 src/football_rag/
   api/
     main.py     FastAPI app: /v1/ask and /health
@@ -162,9 +163,13 @@ src/football_rag/
    python -m uvicorn football_rag.api.main:app --reload --env-file .env
    ```
    `docker compose up` picks up `.env` by itself. Every question then appears as a trace in Langfuse.
-7. Chat in the browser: with the API running (step 5), start the UI in a second terminal and open http://127.0.0.1:7860:
+7. Chat in the browser: with the API running (step 5), start the UI in a second terminal; it opens http://127.0.0.1:7860 by itself:
    ```
    python -m football_rag.gradio_ui
+   ```
+   Or start the API and the UI together on Windows, from a terminal with the environment active (each opens in its own window):
+   ```
+   run
    ```
 8. Run the evaluation:
    ```
@@ -182,7 +187,7 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 
 - Tables are dropped at ingestion, so e.g. the Premier League champions per season are missing.
 - The year metadata is a heuristic: a 2022 chunk that mentions 2026 is tagged 2026.
-- The model sometimes leaks its own knowledge into search queries.
+- The model sometimes leaks its own knowledge into search queries, and sometimes into answers: asked for the top World Cup scorer, it answered Klose with 16 goals (true before 2026) although the retrieved text says Mbappé with 22. The output guardrail blocked it; with "as of 2026" in the question, the agent used the context and answered correctly.
 - The held-out set has no Wikipedia-only, unanswerable or out-of-scope questions yet.
 - The guardrails are only wired into the LangGraph agent (the one the API serves), and neither has a held-out set yet.
 - The output guardrail only skips its check for the exact refusal texts; when the model refuses in its own words, the check still runs (a wasted call, not a wrong answer).
