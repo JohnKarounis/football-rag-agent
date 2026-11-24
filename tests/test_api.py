@@ -10,7 +10,7 @@ FAKE_ANSWER = "Spain won Euro 2024"
 FAKE_INPUT_TOKENS = 100
 FAKE_OUTPUT_TOKENS = 20
 
-def fake_agent(question):
+def fake_agent(question, thread_id=None):
     """Stand-in for run_graph_with_usage: ignores the question and returns a fixed answer and token counts."""
     return FAKE_ANSWER, FAKE_INPUT_TOKENS, FAKE_OUTPUT_TOKENS
 
