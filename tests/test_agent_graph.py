@@ -4,7 +4,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 
 from football_rag import agent_graph
-from football_rag.agent_graph import route_after_input_guardrail, route_after_output_guardrail, collect_tool_context, count_retries
+from football_rag.agent_graph import route_after_input_guardrail, route_after_output_guardrail, collect_tool_context, count_retries, find_question_index
 from football_rag.agent_graph import REFUSAL, NOT_FOUND, RETRY_FEEDBACK
 
 def test_allowed_question_goes_to_model():
@@ -83,3 +83,16 @@ def test_final_answer_goes_to_end():
     ]}
     next_node = route_after_output_guardrail(state)
     assert next_node == END
+
+
+def test_find_question_index_skips_feedback():
+    """The current question is the last user message, skipping older questions and guardrail feedback."""
+    messages = [
+        HumanMessage(content='Who lifted the trophy in Qatar?'),
+        AIMessage(content='Argentina, beating France in penalties.'),
+        HumanMessage(content='Who won the Premier League in the 20/21 season?'),
+        AIMessage(content='Liverpool won the Premier league in the 20/21 season.'),
+        HumanMessage(content=f'{RETRY_FEEDBACK} It was Manchester City who won the league.')
+    ]
+    result = find_question_index(messages)
+    assert result == 2
