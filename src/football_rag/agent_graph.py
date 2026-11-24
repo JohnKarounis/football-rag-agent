@@ -145,10 +145,10 @@ def run_graph(question, thread_id=None):
     return answer
 
 
-def run_graph_with_usage(question):
-    """Run the agent graph on one question and return the answer with its token usage."""
+def run_graph_with_usage(question, thread_id=None):
+    """Run the agent graph on one question in a conversation (thread_id; a new one if missing) and return the answer with its token usage."""
     with get_usage_metadata_callback() as usage_callback:
-        answer = run_graph(question)
+        answer = run_graph(question, thread_id)
 
     input_tokens, output_tokens = count_tokens(usage_callback)
     return answer, input_tokens, output_tokens
