@@ -55,6 +55,15 @@ def count_retries(messages):
     return counter
 
 
+def find_question_index(messages):
+    """Return the position of the user's current question: the last human message that is not guardrail feedback."""
+    question_index = 0
+    for index, message in enumerate(messages):
+        if isinstance(message, HumanMessage) and not message.content.startswith(RETRY_FEEDBACK):
+            question_index = index
+    return question_index
+
+
 def output_guardrail_node(state: MessagesState):
     """Check the answer against the tool results; ask for one rewrite if it is not grounded, then give up with NOT_FOUND."""
     question = state['messages'][0].content
