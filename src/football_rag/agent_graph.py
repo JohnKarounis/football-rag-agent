@@ -66,14 +66,19 @@ def find_question_index(messages):
 
 def output_guardrail_node(state: MessagesState):
     """Check the answer against the tool results; ask for one rewrite if it is not grounded, then give up with NOT_FOUND."""
-    question = state['messages'][0].content
-    answer = state['messages'][-1].content
+    messages = state['messages']
+    question_index = find_question_index(messages)
+    question = messages[question_index].content
+    answer = messages[-1].content
+    turn_messages = messages[question_index:]
+
     if answer == REFUSAL or answer == NOT_FOUND:
         return {}
-    context = collect_tool_context(state['messages'])
+    context = collect_tool_context(messages)
     decision = check_answer(question, context, answer)
+
     if not decision.grounded:
-        retries = count_retries(state['messages'])
+        retries = count_retries(turn_messages)
         if retries < MAX_ANSWER_RETRIES:
             feedback = f"{RETRY_FEEDBACK} {decision.reason} Rewrite it using only facts from the search results, or reply exactly: '{NOT_FOUND}'"
             return {'messages': [HumanMessage(content=feedback)]}
