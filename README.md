@@ -4,7 +4,7 @@
 
 Football Q&A built in measured stages: RAG from scratch with numpy, then LangChain, then a tool-calling agent (hand-written loop and LangGraph), then Corrective RAG. Every step is evaluated with LLM-as-judge on tuning and held-out sets. Runs fully local with LM Studio, Qwen and nomic embeddings.
 
-**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker, tracing (self-hosted Langfuse), a Gradio chat UI and a self-correcting retry after the output guardrail are done; next is conversation memory.
+**Status:** Work in progress. The RAG chain, agents, CRAG, evaluation, retrieval experiments, tests, the FastAPI service, input and output guardrails, per-request latency/token tracking, CI, Docker, tracing (self-hosted Langfuse), a Gradio chat UI, a self-correcting retry after the output guardrail and conversation memory are done.
 
 **Stack:** LM Studio | Qwen | nomic-embed | LangChain | Chroma | LangGraph | FastAPI | Docker | Langfuse | Gradio
 
@@ -14,16 +14,16 @@ LLM-as-judge (Qwen), judged against reference answers. Latency and tokens are av
 
 | System | Tuning (48) | Held-out (11) | Avg latency | Avg input tokens | Avg output tokens |
 |---|---|---|---|---|---|
-| LangChain RAG chain | 94% | 91% | 1.0 s | 1,379 | 26 |
-| Hand-written agent loop | 100% | 91% | 3.1 s | n/a | n/a |
-| LangGraph agent (both guardrails) | 100% | 91% | 6.4 s | 4,926 | 231 |
-| CRAG | 98–100% | 91% | 7.1 s | 2,513 | 137 |
+| LangChain RAG chain | 94% | 91% | 1.1 s | 1,386 | 26 |
+| Hand-written agent loop | 98–100% | 91% | 3.0 s | n/a | n/a |
+| LangGraph agent (both guardrails, memory) | 98–100% | 91% | 6.2 s | 4,818 | 226 |
+| CRAG | 98–100% | 91% | 7.7 s | 2,515 | 135 |
 
-The hand-written loop calls the OpenAI client directly, so LangChain's usage callback can't count its tokens. CRAG scored 98% (one question) in one run and 100% in every other, with no code change in between, so that is run-to-run variance.
+The hand-written loop calls the OpenAI client directly, so LangChain's usage callback can't count its tokens. The 98% scores are one question in one run, a different question each time, with 100% in the other runs and no code change in between: run-to-run variance (temperature 0 is not fully deterministic in LM Studio, and the Wikipedia tool hits the live API). Latency also drifts by a few tenths of a second between runs.
 
 The fixed RAG chain retrieves once and has no Wikipedia fallback or scope rule, so it misses tuning questions the agents get right. The held-out set has no Wikipedia-only or out-of-scope questions yet, which is why the chain ties there.
 
-The agents and CRAG tie on accuracy. CRAG uses *fewer* tokens than the agent, but its cost is the number of calls, not their size: it makes one small grader call per retrieved chunk (10 per question), and each call is a sequential round trip to the model. The agent makes fewer, larger calls, with all the chunks in one prompt. Without guardrails the agent averaged 3.5 s and 3,256 input tokens, half of CRAG's latency; the two guardrails bring it to 6.4 s, close to CRAG. It stays the default design because the guardrails buy safety, not just accuracy. The RAG chain is the cheapest at a single call, but it has no fallback when retrieval misses.
+The agents and CRAG tie on accuracy. CRAG uses *fewer* tokens than the agent, but its cost is the number of calls, not their size: it makes one small grader call per retrieved chunk (10 per question), and each call is a sequential round trip to the model. The agent makes fewer, larger calls, with all the chunks in one prompt. Without guardrails the agent averaged 3.5 s and 3,256 input tokens, half of CRAG's latency; the two guardrails bring it to about 6 s, close to CRAG. It stays the default design because the guardrails buy safety, not just accuracy. The RAG chain is the cheapest at a single call, but it has no fallback when retrieval misses.
 
 The one held-out miss is the same for all four: the corpus text names the wrong Morocco goalscorer against Belgium, so it is a data error, not an agent error.
 
@@ -51,6 +51,19 @@ The two offside cases come from a real trace (see Tracing below). The guardrail 
 
 On the agent eval it changed nothing: no correct answer was rejected (tuning stays 100%), and the agent didn't hallucinate on these sets, so there was nothing to catch. It is insurance, and it costs about 3 s and 1,700 input tokens per answered question (6.4 s vs 3.5 s, 4,926 vs 3,256 tokens), because it re-reads all the tool results. Refusals and questions the input guardrail blocks skip it.
 
+### Conversation memory
+
+Scored on 8 two-turn conversations (`data/eval/follow_up.json`): a question, then a follow-up that only makes sense with it ("Who won the 2022 World Cup?" → "Who was voted best player of that tournament?"). Both answers have a reference and are judged. The control run sends each follow-up to a new conversation, so the agent sees it without the first question.
+
+| | First question | Follow-up |
+|---|---|---|
+| With memory | 100% | 100% |
+| Without memory (control) | 100% | 25% |
+
+The control shows the follow-ups really depend on the first turn: without it, the agent guesses (asked "Who did they beat in the final?" cold, it picks the 2022 World Cup). The two it still gets right are the ones where the follow-up names enough on its own.
+
+The first run scored 7/8 with memory and found a real gap: "What was the largest stadium at Euro 2024?" → Olympiastadion in Berlin, then "In which city is it?" → `I can only help with football.` The agent had the whole conversation, but the input guardrail only saw the latest message, which on its own reads like a geography question. The guardrail now also gets the user's previous question for follow-ups. A first attempt also added a sentence to the guardrail prompt and sent `Previous question: None` with every first question; that fixed the follow-up, but flipped the tuning question about Qatar revoking a news outlet's visas back to a false block (3 of 3 tries in each variant, against 3 of 3 allowed before). So the prompt is unchanged, and the previous question is added only when there is one: first questions see exactly the input they did before, and all 8 follow-ups pass.
+
 ### Retrieval experiments
 
 Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](notebooks/01_retrieval_experiments.ipynb) (hit@3/5/10, MRR):
@@ -71,19 +84,21 @@ Measured on the tuning set in [notebooks/01_retrieval_experiments.ipynb](noteboo
 
 **RAG chain** (`rag_chain.py`): LCEL `retriever | prompt | llm`. Always retrieves once, then answers only from those chunks.
 
-**Input guardrail** (`input_guardrail.py`): one structured-output LLM call (`allowed` + `reason`) that blocks off-topic questions and prompt injections before they reach the agent. In the LangGraph agent it is the first node: `START → input_guardrail → model | END`. A blocked question ends the graph with `I can only help with football.`; an allowed one goes to the agent unchanged. It adds about 0.5 s per question. The agent's own prompt keeps its scope rule as a second layer.
+**Input guardrail** (`input_guardrail.py`): one structured-output LLM call (`allowed` + `reason`) that blocks off-topic questions and prompt injections before they reach the agent. In the LangGraph agent it is the first node: `START → input_guardrail → model | END`. A blocked question ends the graph with `I can only help with football.`; an allowed one goes to the agent unchanged. For a follow-up in a conversation it also gets the user's previous question, so "In which city is it?" can be read in context. It adds about 0.5 s per question. The agent's own prompt keeps its scope rule as a second layer.
 
-**Output guardrail** (`output_guardrail.py`): one structured-output LLM call (`grounded` + `reason`) that checks the final answer against the tool results collected from the conversation. When the model stops calling tools, the graph goes `model → output_guardrail` instead of ending. Grounded answers and refusals pass through to `END` unchanged. An ungrounded answer gets **one retry**: the guardrail adds a feedback message with its reason ("Your answer is not supported by the search results. … Rewrite it using only facts from the search results, or reply exactly: 'I couldn't find that.'"), the graph routes back to the model, and the rewrite is checked again. Only if the rewrite also fails is the answer replaced with `I couldn't find that.` The retry count comes from the feedback messages already in the conversation, so the graph state stays a plain message list. An answer given without any tool call has no context, so it counts as ungrounded, which matches the agent's rule to answer only from tool results.
+**Output guardrail** (`output_guardrail.py`): one structured-output LLM call (`grounded` + `reason`) that checks the final answer against the tool results collected from the conversation. When the model stops calling tools, the graph goes `model → output_guardrail` instead of ending. Grounded answers and refusals pass through to `END` unchanged. An ungrounded answer gets **one retry**: the guardrail adds a feedback message with its reason ("Your answer is not supported by the search results. … Rewrite it using only facts from the search results, or reply exactly: 'I couldn't find that.'"), the graph routes back to the model, and the rewrite is checked again. Only if the rewrite also fails is the answer replaced with `I couldn't find that.` The retry count comes from the feedback messages already in the conversation, so the graph state stays a plain message list. With memory, the guardrail checks the current turn: the question is the latest user message that isn't feedback, and only that turn's feedback messages count as retries. An answer given without any tool call has no context, so it counts as ungrounded, which matches the agent's rule to answer only from tool results.
 
 **Agents:**
 - `agent_loop.py`: hand-written tool-calling loop on the OpenAI client
-- `agent_graph.py`: the same agent as a LangGraph `model ↔ tools` graph, between the input and output guardrails
+- `agent_graph.py`: the same agent as a LangGraph `model ↔ tools` graph, between the input and output guardrails, with conversation memory
 - `crag_graph.py`: Corrective RAG: retrieve → grade each chunk → generate, or rewrite the query → Wikipedia → generate, with up to 2 web attempts
 
-**Evaluation** (`evaluate.py`): scores each guardrail against its labelled set (input: accuracy, false blocks, missed blocks; output: accuracy, false rejects, missed hallucinations), then runs the chain and each agent on the eval sets and scores the answers with an LLM judge. Unanswerable questions expect a refusal. Each agent call is timed and wrapped in LangChain's usage callback, so every system also gets average latency and input/output tokens per question.
+**Conversation memory** (`agent_graph.py`): the graph is compiled with LangGraph's `MemorySaver` checkpointer, and every run gets a `thread_id`. After each run the checkpointer stores the thread's messages; the next question in the same thread is appended to them, so the model sees the whole conversation and can resolve "they" or "that tournament". A call without a thread id gets a new one, so the eval sets still run one independent question at a time.
+
+**Evaluation** (`evaluate.py`): scores the follow-up conversations with and without memory, then each guardrail against its labelled set (input: accuracy, false blocks, missed blocks; output: accuracy, false rejects, missed hallucinations), then runs the chain and each agent on the eval sets and scores the answers with an LLM judge. Unanswerable questions expect a refusal. Each agent call is timed and wrapped in LangChain's usage callback, so every system also gets average latency and input/output tokens per question.
 
 **API** (`api/`): FastAPI service in front of the LangGraph agent.
-- `POST /v1/ask`: takes `{"question": "..."}` (1–500 characters, validated by Pydantic; anything else gets a 422) and returns `{"answer": "...", "latency_ms": ..., "input_tokens": ..., "output_tokens": ...}`, with the tokens summed over every LLM call in the request (guardrail included)
+- `POST /v1/ask`: takes `{"question": "...", "conversation_id": "..."}` (question 1–500 characters, validated by Pydantic; anything else gets a 422) and returns `{"answer": "...", "latency_ms": ..., "input_tokens": ..., "output_tokens": ..., "conversation_id": "..."}`, with the tokens summed over every LLM call in the request (guardrails included). `conversation_id` is optional: leave it out and the API starts a new conversation and returns its id; send it back with the next question to continue the conversation
 - `GET /health`: liveness check
 - Interactive docs at `/docs`. Each request is logged with the question length, latency and token counts; the LLM client has a 50-second timeout.
 
@@ -95,19 +110,19 @@ Tracing already paid off: a question about the all-time top scorer hit the 12-st
 
 It also caught the output guardrail's first real block, and a weakness: "What is the offside rule?" got a long answer that stated one rule backwards (a player who was offside when the ball was played "becomes onside before receiving it" and is not penalised). The guardrail replaced it with `I couldn't find that.`, but its reason was a different, correct sentence that combined facts from two chunks, and it didn't mention the false one. The right outcome for the wrong reason. Both cases are now in the guardrail set (see Output guardrail above).
 
-**Chat UI** (`gradio_ui.py`): a Gradio `ChatInterface` that renders the agent's Markdown answers. It is a separate client of the API, not part of the agent: each message is sent to `POST /v1/ask` with `requests` (URL from `API_URL`, default `http://127.0.0.1:8000`), so the flow is browser → Gradio → API → agent, the same as with any other front end. Gradio is an optional `ui` extra, so the API image and CI don't install it. Each question is answered on its own: the API has no conversation memory yet, so follow-ups like "why did you say that before?" don't work.
+**Chat UI** (`gradio_ui.py`): a Gradio `ChatInterface` that renders the agent's Markdown answers. It is a separate client of the API, not part of the agent: each message is sent to `POST /v1/ask` with `requests` (URL from `API_URL`, default `http://127.0.0.1:8000`), so the flow is browser → Gradio → API → agent, the same as with any other front end. Gradio is an optional `ui` extra, so the API image and CI don't install it. The UI keeps the API's `conversation_id` in a `gr.State` for each browser session and sends it with every message, so follow-ups work; clearing the chat starts a new conversation.
 
 ## Project layout
 
 ```
 data/
   corpus/       5 Wikipedia articles
-  eval/         hand_written (18), tuning (30), held_out (11), input_guardrail (20), output_guardrail (18)
+  eval/         hand_written (18), tuning (30), held_out (11), input_guardrail (20), output_guardrail (18), follow_up (8 conversations)
 notebooks/
   01_retrieval_experiments.ipynb  numpy RAG baseline and retrieval experiments
 scripts/
   fetch_corpus.py  re-download the Wikipedia corpus
-tests/          unit tests for ingestion, the eval sets, the API, both guardrail routers, tool-context collection, the retry count and the step limit
+tests/          unit tests for ingestion, the eval sets, the API, both guardrail routers, tool-context collection, the retry count, the current-question lookup, the step limit and the API's conversation id
 .github/workflows/tests.yml  CI: runs the tests on every push and pull request
 Dockerfile      API image
 docker-compose.yml  runs the API container: port 8000, LMSTUDIO_URL, Langfuse URL, .env, chroma_db volume
@@ -193,7 +208,10 @@ The corpus is committed, so step 3 works offline. `python scripts/fetch_corpus.p
 - The output guardrail only skips its check for the exact refusal texts; when the model refuses in its own words, the check still runs (a wasted call, not a wrong answer).
 - No give-up rule: when no search returns the answer, the agent keeps searching until the 12-step limit (about 14 s and 17k input tokens) before returning `I couldn't find that.`
 - Coverage is much narrower than the scope the input guardrail allows: the corpus covers the World Cup, the 2022 World Cup, Euro 2024, the Premier League and offside; everything else depends on Wikipedia intros.
-- No conversation memory: every question, in the API and the chat UI, starts a fresh graph run.
+- Conversation memory lives in the API process (`MemorySaver`): it is lost on restart, grows without limit, and wouldn't be shared between several API workers. A database checkpointer (SQLite or Postgres) would fix all three.
+- The whole conversation is re-sent to the model every turn, so input tokens grow with the length of the chat; there is no trimming or summarising.
+- The input guardrail sees only the previous question, not the whole conversation, and the follow-up set is small (8 two-turn conversations, no longer chats or topic switches).
+- Oyarzabal's winner in the Euro 2024 final isn't in the corpus (it is in a dropped table), so "Who scored their winning goal in the final?" gets `I couldn't find that.`
 - The output guardrail misses subtly reversed rules: it infers its way to "supported" even when the context contradicts the answer (1 known miss in its set; prompt changes didn't fix it).
 
 ## License

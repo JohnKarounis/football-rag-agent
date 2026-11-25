@@ -2,6 +2,7 @@
 
 import logging
 import time
+import uuid
 
 from fastapi import FastAPI
 
@@ -24,8 +25,11 @@ def health():
 def ask(request: AskRequest) -> AskResponse:
     """Ask the agent a question and reply with the answer, latency, and token usage."""
     question = request.question
+    conversation_id = request.conversation_id
+    if conversation_id is None:
+        conversation_id = str(uuid.uuid4())
     start_time = time.perf_counter()
-    answer, input_tokens, output_tokens = run_graph_with_usage(question)
+    answer, input_tokens, output_tokens = run_graph_with_usage(question, conversation_id)
     latency_ms = (time.perf_counter() - start_time) * 1000
     logger.info(f'Answered question chars={len(question)} in {latency_ms:.0f}ms, tokens in={input_tokens} out={output_tokens}')
-    return AskResponse(answer=answer, latency_ms=latency_ms, input_tokens=input_tokens, output_tokens=output_tokens)
+    return AskResponse(answer=answer, latency_ms=latency_ms, input_tokens=input_tokens, output_tokens=output_tokens, conversation_id=conversation_id)

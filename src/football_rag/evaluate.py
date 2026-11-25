@@ -2,6 +2,7 @@
 
 import json
 import time
+import uuid
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -59,6 +60,33 @@ def evaluate_agent(agent_func, eval_set):
     avg_input_tokens = sum([r['Input tokens'] for r in results]) / len(results)
     avg_output_tokens = sum([r['Output tokens'] for r in results]) / len(results)
     metrics = {'Judge Rate': judge_rate, 'Avg latency (s)': round(avg_latency_s, 2), 'Avg input tokens': round(avg_input_tokens), 'Avg output tokens': round(avg_output_tokens)}
+    return metrics, results
+
+
+def evaluate_follow_ups(eval_set, use_memory=True):
+    """Run each two-turn conversation and judge both answers; with use_memory=False the follow up goes to a new thread (the control)."""
+    results = []
+    for item in eval_set:
+        thread_id = str(uuid.uuid4())
+        answer = run_graph(item['question'], thread_id)
+        if not use_memory:
+            thread_id = str(uuid.uuid4())
+        follow_up_answer = run_graph(item['follow_up'], thread_id)
+
+        verdict = judge_chain.invoke({'question': item['question'], 'expected': item['answer'], 'answer': answer})
+        judged = verdict.strip().upper() == 'CORRECT'
+
+        follow_up_verdict = judge_chain.invoke({'question': item['follow_up'], 'expected': item['follow_up_answer'], 'answer': follow_up_answer})
+        follow_up_judged = follow_up_verdict.strip().upper() == 'CORRECT'
+
+        results.append({
+            'Question': item['question'], 'Answer': answer, 'Judge': judged, 
+            'Follow-up': item['follow_up'], 'Follow-up answer': follow_up_answer, 'Follow-up judge': follow_up_judged
+        })
+
+    question_rate = sum([r['Judge'] for r in results]) / len(results)
+    follow_up_rate = sum([r['Follow-up judge'] for r in results]) / len(results)
+    metrics = {'Question rate': question_rate, 'Follow-up rate': follow_up_rate}
     return metrics, results
 
 
@@ -120,6 +148,12 @@ if __name__ == '__main__':
     held_out = load_eval_set('held_out')
     input_guardrail_set = load_eval_set('input_guardrail')
     output_guardrail_set = load_eval_set('output_guardrail')
+
+    follow_up_set = load_eval_set('follow_up')
+    with_memory_metrics, _ = evaluate_follow_ups(follow_up_set)
+    print('Follow-ups with memory:', with_memory_metrics)
+    without_memory_metrics, _ = evaluate_follow_ups(follow_up_set, use_memory=False)
+    print('Follow-ups without memory:', without_memory_metrics)
 
     input_guardrail_metrics, _ = evaluate_input_guardrail(input_guardrail_set)
     print('Input Guardrail:', input_guardrail_metrics)

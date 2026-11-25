@@ -1,10 +1,13 @@
 """LangGraph tool-calling agent."""
 
+import uuid
+
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.callbacks import get_usage_metadata_callback
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.errors import GraphRecursionError
+from langgraph.checkpoint.memory import MemorySaver
 
 from football_rag.llm import get_llm, count_tokens
 from football_rag.prompts import SYSTEM
@@ -21,8 +24,13 @@ MAX_ANSWER_RETRIES = 1
 
 def input_guardrail_node(state: MessagesState):
     """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
-    question = state['messages'][-1].content
-    decision = check_question(question)
+    messages = state['messages']
+    question = messages[-1].content
+    previous_question = None
+    if len(messages) > 1:
+        previous_index = find_question_index(messages[:-1])
+        previous_question = messages[previous_index].content
+    decision = check_question(question, previous_question)
     if not decision.allowed:
         return {'messages': [AIMessage(content=REFUSAL)]}
     return {}
@@ -55,16 +63,30 @@ def count_retries(messages):
     return counter
 
 
+def find_question_index(messages):
+    """Return the position of the user's current question: the last human message that is not guardrail feedback."""
+    question_index = 0
+    for index, message in enumerate(messages):
+        if isinstance(message, HumanMessage) and not message.content.startswith(RETRY_FEEDBACK):
+            question_index = index
+    return question_index
+
+
 def output_guardrail_node(state: MessagesState):
     """Check the answer against the tool results; ask for one rewrite if it is not grounded, then give up with NOT_FOUND."""
-    question = state['messages'][0].content
-    answer = state['messages'][-1].content
+    messages = state['messages']
+    question_index = find_question_index(messages)
+    question = messages[question_index].content
+    answer = messages[-1].content
+    turn_messages = messages[question_index:]
+
     if answer == REFUSAL or answer == NOT_FOUND:
         return {}
-    context = collect_tool_context(state['messages'])
+    context = collect_tool_context(messages)
     decision = check_answer(question, context, answer)
+
     if not decision.grounded:
-        retries = count_retries(state['messages'])
+        retries = count_retries(turn_messages)
         if retries < MAX_ANSWER_RETRIES:
             feedback = f"{RETRY_FEEDBACK} {decision.reason} Rewrite it using only facts from the search results, or reply exactly: '{NOT_FOUND}'"
             return {'messages': [HumanMessage(content=feedback)]}
@@ -84,6 +106,7 @@ def build_graph(llm, tools, system_prompt):
     """Build a model <-> tools agent graph."""
 
     llm_with_tools = llm.bind_tools(tools)
+    checkpointer = MemorySaver()
 
     def call_model(state: MessagesState):
         prompt = [SystemMessage(content=system_prompt)] + state['messages']
@@ -102,20 +125,24 @@ def build_graph(llm, tools, system_prompt):
     builder.add_conditional_edges('input_guardrail', route_after_input_guardrail, ['model', END])
     builder.add_conditional_edges('output_guardrail', route_after_output_guardrail, ['model', END])
 
-    graph = builder.compile()
+    graph = builder.compile(checkpointer=checkpointer)
     return graph
 
 
 graph = build_graph(get_llm(), agent_tools, SYSTEM)
 
 
-def run_graph(question):
-    """Run the agent graph on one question and return the final answer."""
+def run_graph(question, thread_id=None):
+    """Run the agent graph on one question in a conversation (thread_id; a new one if missing) and return the final answer."""
+    if thread_id is None:
+        thread_id = str(uuid.uuid4())
     callbacks = get_callbacks()
     try:
         result = graph.invoke(
             {'messages': [HumanMessage(content=question)]},
-            config={'recursion_limit': RECURSION_LIMIT, 'callbacks': callbacks}
+            config={'recursion_limit': RECURSION_LIMIT, 
+                    'callbacks': callbacks, 
+                    'configurable': {'thread_id': thread_id}}
         )
         answer = result['messages'][-1].content
     except GraphRecursionError:
@@ -123,10 +150,10 @@ def run_graph(question):
     return answer
 
 
-def run_graph_with_usage(question):
-    """Run the agent graph on one question and return the answer with its token usage."""
+def run_graph_with_usage(question, thread_id=None):
+    """Run the agent graph on one question in a conversation (thread_id; a new one if missing) and return the answer with its token usage."""
     with get_usage_metadata_callback() as usage_callback:
-        answer = run_graph(question)
+        answer = run_graph(question, thread_id)
 
     input_tokens, output_tokens = count_tokens(usage_callback)
     return answer, input_tokens, output_tokens

@@ -78,3 +78,11 @@ def test_output_guardrail_has_required_keys():
         assert set(item) == {'question', 'context', 'answer', 'grounded'}
         assert isinstance(item['grounded'], bool)
     assert len(output_guardrail) == 18
+
+
+def test_follow_up_has_required_keys():
+    """Every follow-up item has exactly question, answer, follow_up, follow_up_answer."""
+    follow_up_set = load_eval_set('follow_up')
+    for item in follow_up_set:
+        assert set(item) == {'question', 'answer', 'follow_up', 'follow_up_answer'}
+    assert len(follow_up_set) == 8

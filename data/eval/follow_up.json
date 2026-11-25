@@ -1,0 +1,50 @@
+[
+    {
+        "question": "Who won Euro 2024?",
+        "answer": "Spain",
+        "follow_up": "Who did they beat in the final?",
+        "follow_up_answer": "England"
+    },
+    {
+        "question": "Who won the 2022 World Cup?",
+        "answer": "Argentina",
+        "follow_up": "Who was voted best player of that tournament?",
+        "follow_up_answer": "Lionel Messi"
+    },
+    {
+        "question": "Where was the 2022 World Cup final played?",
+        "answer": "Lusail Stadium",
+        "follow_up": "On what date was it played?",
+        "follow_up_answer": "18 December 2022"
+    },
+    {
+        "question": "Who won the Golden Boot at the 2022 World Cup?",
+        "answer": "Kylian Mbappé",
+        "follow_up": "How many goals did he score?",
+        "follow_up_answer": "Eight"
+    },
+    {
+        "question": "Which country hosted the first World Cup?",
+        "answer": "Uruguay",
+        "follow_up": "In what year was it held?",
+        "follow_up_answer": "1930"
+    },
+    {
+        "question": "When was the Premier League founded?",
+        "answer": "20 February 1992",
+        "follow_up": "What was its original name?",
+        "follow_up_answer": "FA Premier League"
+    },
+    {
+        "question": "Who was Player of the Tournament at Euro 2024?",
+        "answer": "Rodri",
+        "follow_up": "Who won the young player award there?",
+        "follow_up_answer": "Lamine Yamal"
+    },
+    {
+        "question": "What was the largest stadium at Euro 2024?",
+        "answer": "Olympiastadion",
+        "follow_up": "In which city is it?",
+        "follow_up_answer": "Berlin"
+    }
+]
