@@ -26,7 +26,7 @@ def input_guardrail_node(state: MessagesState):
     """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
     messages = state['messages']
     question = messages[-1].content
-    previous_question = 'None'
+    previous_question = None
     if len(messages) > 1:
         previous_index = find_question_index(messages[:-1])
         previous_question = messages[previous_index].content
