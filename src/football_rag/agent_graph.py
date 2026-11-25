@@ -24,8 +24,13 @@ MAX_ANSWER_RETRIES = 1
 
 def input_guardrail_node(state: MessagesState):
     """Block off-topic or injection questions with a refusal; let allowed ones through unchanged."""
-    question = state['messages'][-1].content
-    decision = check_question(question)
+    messages = state['messages']
+    question = messages[-1].content
+    previous_question = 'None'
+    if len(messages) > 1:
+        previous_index = find_question_index(messages[:-1])
+        previous_question = messages[previous_index].content
+    decision = check_question(question, previous_question)
     if not decision.allowed:
         return {'messages': [AIMessage(content=REFUSAL)]}
     return {}
