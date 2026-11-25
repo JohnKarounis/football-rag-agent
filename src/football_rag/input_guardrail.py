@@ -15,13 +15,13 @@ class GuardrailDecision(BaseModel):
 
 input_guardrail_prompt = ChatPromptTemplate.from_messages([
     ('system', INPUT_GUARDRAIL_SYSTEM),
-    ('human', 'Question:\n{question}')
+    ('human', 'Previous question:\n{previous_question}\n\nQuestion:\n{question}')
 ])
 
 input_guardrail_chain = input_guardrail_prompt | get_llm().with_structured_output(GuardrailDecision)
 
 
-def check_question(question):
+def check_question(question, previous_question='None'):
     """Return the guardrail's decision for one question."""
-    decision = input_guardrail_chain.invoke({'question': question})
+    decision = input_guardrail_chain.invoke({'question': question, 'previous_question': previous_question})
     return decision
