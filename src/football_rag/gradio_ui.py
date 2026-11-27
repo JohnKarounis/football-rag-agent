@@ -12,9 +12,12 @@ def respond(message, history, conversation_id):
     if not history:
         conversation_id = None
     url = f'{API_URL}/v1/ask'
-    response = requests.post(url, json={'question': message, 'conversation_id': conversation_id}, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.post(url, json={'question': message, 'conversation_id': conversation_id}, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException:
+        return "Couldn't get an answer from the API. Is it running? Try again in a few seconds.", conversation_id
     return data['answer'], data['conversation_id']
 
 chatbot = gr.Chatbot(
